@@ -1,6 +1,6 @@
 # Aibou
 
-Companheiro de estudos pessoal. Vocabulário do domínio em `CONTEXT.md`; decisões em `docs/adr/`.
+Companheiro de estudos pessoal. Vocabulário do domínio em `CONTEXT.md`; decisões em `docs/adr/`. Estado atual e próximos passos em `docs/HANDOFF.md`.
 
 ## Regras do projeto
 
