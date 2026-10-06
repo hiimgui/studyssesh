@@ -56,7 +56,7 @@ Dentro do Claude Code:
 
 ## Pendências fora do código
 
-- **Vercel:** importar o repositório e cadastrar as variáveis do `.env.example`.
-- **Secrets do Supabase no GitHub:** `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` e `SUPABASE_PROJECT_ID`.
+- **Auth do Supabase (produção):** Site URL e Redirect URLs com o domínio da Vercel.
+- **Primeira migration em produção:** a integração GitHub do Supabase só aplica migrations em pushes que alterem `supabase/`. A `20261005000000_trilhas.sql` ainda não foi aplicada.
 - **Proteção do `main`:** exigir o check `verify`.
 - **Maior risco (#2):** se a conta Pro não rodar uma tarefa agendada com conector personalizado, o ADR 0002 é reaberto antes do #10.
