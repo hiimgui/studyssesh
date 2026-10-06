@@ -10,8 +10,7 @@
   --erro: oklch(52% 0.17 28);
 
   --fonte-corpo: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-  /* Bonta só é servida quando a licença de webfont for confirmada (spec, Further Notes). */
-  --fonte-titulo: 'Bonta', Georgia, 'Times New Roman', serif;
+  --fonte-titulo: 'Unbounded', ui-sans-serif, system-ui, sans-serif;
 
   --espaco: clamp(1rem, 4vw, 2rem);
   --raio: 4px;

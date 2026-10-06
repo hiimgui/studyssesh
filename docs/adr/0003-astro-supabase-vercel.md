@@ -15,4 +15,4 @@ O ADR 0001 decidiu que o app é auto-hospedado. O usuário quer experimentar o A
 ## Consequências
 - O app é majoritariamente interativo. O ganho do Astro aqui é aprendizado e não desempenho, o que é uma escolha consciente.
 - Tema: escuro e claro, seguindo o sistema. Sem notificações.
-- Tipografia: JetBrains Mono como fonte principal e Bonta nos títulos, num visual minimalista. A licença da Bonta precisa cobrir uso como webfont.
+- Tipografia: JetBrains Mono como fonte principal e Unbounded nos títulos, num visual minimalista. As duas vêm do Google Fonts, com licença OFL. A Unbounded substituiu a Bonta, decisão tomada na issue #2.

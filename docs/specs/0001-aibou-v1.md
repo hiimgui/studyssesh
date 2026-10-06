@@ -79,7 +79,7 @@ Um app web pessoal (SPA), em que cada assunto é uma **Trilha** numa aba própri
 52. Como usuário, quero ter a garantia de que o Claude nunca edita nem apaga os meus dados, só cria o que eu peço e escreve Resumos e Recomendações.
 
 ### Visual
-53. Como usuário, quero um visual minimalista com JetBrains Mono no corpo e Bonta nos títulos.
+53. Como usuário, quero um visual minimalista com JetBrains Mono no corpo e Unbounded nos títulos.
 54. Como usuário, quero que o tema escuro ou claro siga o sistema.
 55. Como usuário, quero usar o app confortavelmente no celular.
 
@@ -95,7 +95,7 @@ Um app web pessoal (SPA), em que cada assunto é uma **Trilha** numa aba própri
 - **Progresso**: o Objetivo mensurável soma as durações das Sessões no período. O Objetivo abstrato é a razão entre itens ligados concluídos e itens ligados no total (projetos aceitos que viraram sub-Objetivos e itens da Biblioteca). Marcos fixos: 10, 25, 50, 100h e depois a cada 100h. "Dias estudados no mês" conta dias distintos com Sessão no fuso America/Sao_Paulo.
 - **Resumo semanal**: uma tarefa agendada na conta Pro do usuário roda segunda às 7h, lê pelo conector e grava o Resumo e as Recomendações. O "gerar agora" é um link para o claude.ai com prompt pré-preenchido.
 - **Decks**: o conteúdo do Deck (cartas) é gravado pelo Claude na Recomendação. O arquivo `.apkg` é gerado pelo app no download.
-- **Front**: escrito com a skill "impeccable". Minimalista, JetBrains Mono e Bonta (confirmar licença de webfont), tema seguindo o sistema. Sem notificações.
+- **Front**: escrito com a skill "impeccable". Minimalista, JetBrains Mono e Unbounded (licença OFL; substituiu a Bonta, decidido na issue #2), tema seguindo o sistema. Sem notificações.
 
 ## Testing Decisions
 
@@ -123,5 +123,5 @@ Um app web pessoal (SPA), em que cada assunto é uma **Trilha** numa aba própri
 
 ## Further Notes
 
-- **Riscos a verificar antes de construir o Resumo**: se a conta Pro permite tarefas agendadas usando conectores personalizados (se não permitir, o ADR 0002 é reaberto); a licença webfont da Bonta; a instalação das skills "impeccable" e "humanizer".
+- **Riscos a verificar antes de construir o Resumo**: se a conta Pro permite tarefas agendadas usando conectores personalizados (se não permitir, o ADR 0002 é reaberto); a instalação das skills "impeccable" e "humanizer".
 - Glossário completo em `CONTEXT.md`; decisões em `docs/adr/0001` a `0003`.
