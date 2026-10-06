@@ -33,3 +33,9 @@ export const progresso = (o: ObjetivoMensuravel) =>
 // O que falta arredonda o minuto para cima: com 9h 59min feitas de 10h, falta 1 min.
 export const faltam = (o: ObjetivoMensuravel) =>
   horas(Math.ceil(Math.max(0, o.metaHoras * 3600 - o.estudadoSegundos) / 60) * 60);
+
+// "Semana de 5 a 11 de outubro", ou "de 28 de setembro a 4 de outubro".
+export const semanaPorExtenso = ({ de, ate }: { de: Data; ate: Data }) =>
+  de.slice(0, 7) === ate.slice(0, 7)
+    ? `Semana de ${Number(de.slice(8))} a ${diaMes(ate)}`
+    : `Semana de ${diaMes(de)} a ${diaMes(ate)}`;

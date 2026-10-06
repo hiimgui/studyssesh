@@ -1,0 +1,278 @@
+---
+import type { Objetivo, Resumo, TipoRecomendacao, Trilha } from '../companheiro/companheiro';
+import { dataDe, FUSO } from '../companheiro/fuso';
+import { semanaPorExtenso, tituloDoObjetivo } from '../lib/formato';
+import { linkGerarAgora, resumoAtrasado } from '../lib/resumo';
+
+// Linha do tempo de Resumos da Trilha: o mais recente aberto, os anteriores
+// recolhidos. Na consulta de uma Trilha arquivada, sem "gerar agora".
+interface Props {
+  trilha: Trilha;
+  resumos: Resumo[];
+  objetivos: Objetivo[];
+  consultando: boolean;
+}
+
+const { trilha, resumos, objetivos, consultando } = Astro.props;
+const agora = new Date();
+const [ultimo] = resumos;
+// Sem nenhum Objetivo não há Resumo: toda Recomendação precisa de um, e a
+// routine pula a Trilha. Então também não há atraso.
+const semObjetivo = objetivos.length === 0;
+const atrasado =
+  !consultando && !semObjetivo && resumoAtrasado(ultimo ?? null, trilha.criadaEm, agora);
+
+const TIPO: Record<TipoRecomendacao, string> = {
+  projeto: 'Projeto',
+  roteiro: 'Roteiro',
+  deck: 'Deck',
+  material: 'Material Extra',
+};
+const nomeDoObjetivo = (id: string) => {
+  const o = objetivos.find((x) => x.id === id);
+  return !o ? 'Objetivo' : o.tipo === 'abstrato' ? o.descricao : tituloDoObjetivo(o);
+};
+const quando = (d: Date) =>
+  d.toLocaleString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: FUSO,
+  });
+const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+---
+
+<section class="resumos" aria-labelledby="titulo-resumos">
+  <div class="cabeca">
+    <h2 id="titulo-resumos">Resumos</h2>
+    <p class="suave">
+      {
+        ultimo
+          ? `O último saiu ${quando(ultimo.geradoEm)}.`
+          : consultando
+            ? 'Esta Trilha não teve Resumos.'
+            : semObjetivo
+              ? 'Os Resumos começam quando a Trilha tiver um Objetivo.'
+              : 'O primeiro sai numa segunda, às 7:07, cobrindo a semana anterior.'
+      }
+    </p>
+    {
+      atrasado && (
+        <p class="atraso" role="status">
+          O Resumo da semana passada não chegou. Dá para pedir agora.
+        </p>
+      )
+    }
+    {
+      !consultando && !semObjetivo && (
+        <a
+          class="gerar botao-secundario"
+          href={linkGerarAgora(trilha, dataDe(agora))}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Gerar agora no Claude
+        </a>
+      )
+    }
+  </div>
+
+  {
+    resumos.length > 0 && (
+      <ol class="linha-do-tempo">
+        {resumos.map((r, i) => (
+          <li>
+            <details class="resumo" open={i === 0}>
+              <summary>
+                <span class="semana">{semanaPorExtenso(r.semana)}</span>
+                <span class="suave quando">{quando(r.geradoEm)}</span>
+              </summary>
+              <div class="corpo">
+                <div class="texto">
+                  {paragrafos(r.texto).map((p) => (
+                    <p>{p}</p>
+                  ))}
+                </div>
+
+                <h3>Recomendações</h3>
+                <ul class="recomendacoes">
+                  {r.recomendacoes.map((rec) => (
+                    <li data-tipo={rec.tipo}>
+                      <span class="tipo">{TIPO[rec.tipo]}</span>
+                      <span class="titulo">
+                        {rec.url ? (
+                          <a href={rec.url} target="_blank" rel="noopener noreferrer">
+                            {rec.titulo}
+                          </a>
+                        ) : (
+                          rec.titulo
+                        )}
+                      </span>
+                      {rec.descricao && <span class="descricao">{rec.descricao}</span>}
+                      <span class="suave objetivo">Para: {nomeDoObjetivo(rec.objetivoId)}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <p class="fontes suave">
+                  Fontes:{' '}
+                  {r.fontes.map((f, j) => (
+                    <>
+                      {j > 0 && ' · '}
+                      <a href={f.url} target="_blank" rel="noopener noreferrer">
+                        {f.titulo}
+                      </a>
+                    </>
+                  ))}
+                </p>
+              </div>
+            </details>
+          </li>
+        ))}
+      </ol>
+    )
+  }
+</section>
+
+<style>
+  .resumos {
+    display: grid;
+    gap: 1.25rem;
+    max-width: 36rem;
+  }
+
+  .cabeca {
+    display: grid;
+    gap: 0.5rem;
+    justify-items: start;
+  }
+
+  .atraso {
+    color: var(--texto);
+  }
+
+  .gerar {
+    display: inline-block;
+    margin-top: 0.25rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--raio);
+    text-decoration: none;
+  }
+
+  .linha-do-tempo {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .linha-do-tempo > li {
+    border-top: 1px solid var(--linha);
+  }
+
+  .linha-do-tempo > li:last-child {
+    border-bottom: 1px solid var(--linha);
+  }
+
+  summary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+    padding-block: 0.875rem;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .semana {
+    font-weight: 500;
+  }
+
+  .resumo:not([open]) .semana {
+    text-decoration: underline;
+    text-decoration-color: var(--linha);
+    text-underline-offset: 4px;
+  }
+
+  .quando {
+    font-size: 0.8125rem;
+  }
+
+  .corpo {
+    display: grid;
+    gap: 1rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .texto {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 65ch;
+    text-wrap: pretty;
+  }
+
+  h3 {
+    margin: 0.5rem 0 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--texto-suave);
+  }
+
+  .recomendacoes {
+    display: grid;
+    gap: 0.875rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .recomendacoes li {
+    display: grid;
+    gap: 0.125rem;
+  }
+
+  .tipo {
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    color: var(--texto-suave);
+  }
+
+  [data-tipo='material'] .tipo {
+    color: var(--destaque);
+  }
+
+  .titulo {
+    font-weight: 500;
+  }
+
+  .titulo a,
+  .fontes a {
+    text-underline-offset: 3px;
+    text-decoration-color: var(--linha);
+  }
+
+  .titulo a:hover,
+  .fontes a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .descricao {
+    text-wrap: pretty;
+  }
+
+  .objetivo,
+  .fontes {
+    font-size: 0.8125rem;
+  }
+
+  .fontes {
+    overflow-wrap: anywhere;
+  }
+</style>
