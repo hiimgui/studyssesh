@@ -96,6 +96,9 @@ const progressoAqui = atual
 const timer = await companheiro.timerLigado('usuario');
 const timerAqui = timer && atual && timer.trilhaId === atual.id ? timer : null;
 const timerEm = timer && !timerAqui ? trilhas.find((t) => t.id === timer.trilhaId) : undefined;
+// O rascunho da nota fica neste aparelho, preso ao timer ligado agora: sobrevive
+// às recargas de pausar, retomar e Inatividade, e some quando o timer acaba.
+const chaveDoRascunho = timer ? `aibou:nota:${timer.iniciadoEm.toISOString()}` : '';
 // Na consulta de uma Trilha arquivada, todas as Sessões; nas abas, as 10 mais recentes.
 const sessoes = atual
   ? await companheiro.listarSessoes('usuario', {
@@ -585,7 +588,34 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
     }
   </main>
   {msAteInatividade !== null && <div id="presenca" data-ms-ate-inatividade={msAteInatividade} hidden />}
+  <div id="rascunho" data-chave={chaveDoRascunho} hidden></div>
 </Base>
+
+<script>
+  // Rascunho da nota da Sessão: guardado a cada tecla e devolvido ao campo
+  // depois de qualquer recarga. Rascunhos de timers que já acabaram são
+  // apagados. Sem localStorage (aba anônima, bloqueio), o campo só não lembra.
+  const chave = document.getElementById('rascunho')?.dataset.chave ?? '';
+  const nota = document.querySelector<HTMLInputElement>('#nota');
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith('aibou:nota:') && k !== chave) localStorage.removeItem(k);
+    }
+    if (chave && nota) {
+      nota.value ||= localStorage.getItem(chave) ?? '';
+      nota.addEventListener('input', () => {
+        try {
+          if (nota.value) localStorage.setItem(chave, nota.value);
+          else localStorage.removeItem(chave);
+        } catch {
+          // Armazenamento cheio ou bloqueado: segue sem rascunho.
+        }
+      });
+    }
+  } catch {
+    // localStorage indisponível.
+  }
+</script>
 
 <script>
   // Inatividade: enquanto o timer conta, cada interação com a página avisa o
