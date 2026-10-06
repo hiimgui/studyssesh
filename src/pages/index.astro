@@ -5,6 +5,7 @@ import BarraDeProgresso from '../components/BarraDeProgresso.svelte';
 import BarraDoMarco from '../components/BarraDoMarco.astro';
 import Celebracao from '../components/Celebracao.astro';
 import Inicio from '../components/Inicio.astro';
+import Resumos from '../components/Resumos.astro';
 import {
   criarCompanheiro,
   EntradaInvalida,
@@ -106,6 +107,7 @@ const sessoes = atual
     })
   : [];
 const objetivos = atual ? await companheiro.listarObjetivos('usuario', { trilhaId: atual.id }) : [];
+const resumos = atual ? await companheiro.listarResumos('usuario', { trilhaId: atual.id }) : [];
 const emAndamento = objetivos.filter((o) => o.situacao === 'em-andamento');
 const pedirObjetivo = !consultando && semObjetivoEmAndamento(objetivos);
 const celebrado = consultando ? null : objetivoParaCelebrar(objetivos);
@@ -538,6 +540,13 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
               )}
             </section>
           )}
+
+          <Resumos
+            trilha={atual}
+            resumos={resumos}
+            objetivos={objetivos}
+            consultando={!!consultando}
+          />
 
           <section class="sessoes" aria-labelledby="titulo-sessoes">
             <h2 id="titulo-sessoes">{consultando ? 'Sessões' : 'Sessões recentes'}</h2>

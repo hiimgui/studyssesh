@@ -20,12 +20,74 @@ async function conectado() {
 }
 
 describe('Servidor MCP', () => {
-  it('oferece as ferramentas de consulta e de registro', async () => {
+  it('oferece as ferramentas de consulta, de registro e do Resumo', async () => {
     const { cliente } = await conectado();
 
     const { tools } = await cliente.listTools();
 
-    expect(tools.map((t) => t.name).sort()).toEqual(['consultar_progresso', 'registrar_sessao']);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'consultar_progresso',
+      'consultar_trilha',
+      'gravar_resumo',
+      'registrar_sessao',
+    ]);
+  });
+
+  it('consultar_trilha devolve Objetivos (com ids), Sessões com nota e Resumos anteriores', async () => {
+    const { cliente, companheiro, trilha } = await conectado();
+    const objetivo = await companheiro.criarObjetivoAbstrato('usuario', {
+      trilhaId: trilha.id,
+      descricao: 'Conseguir a certificação',
+    });
+    await companheiro.registrarSessao('usuario', { trilhaId: trilha.id, minutos: 40, nota: 'OAuth' });
+
+    const resposta = await cliente.callTool({
+      name: 'consultar_trilha',
+      arguments: { trilha_id: trilha.id },
+    });
+
+    expect(resposta.structuredContent).toMatchObject({
+      trilha: { id: trilha.id, nome: 'MCP' },
+      objetivos: [{ id: objetivo.id, tipo: 'abstrato', descricao: 'Conseguir a certificação' }],
+      sessoes: [{ minutos: 40, nota: 'OAuth', origem: 'chat' }],
+      resumosAnteriores: [],
+    });
+  });
+
+  it('gravar_resumo cria o Resumo, com as Recomendações, no Companheiro', async () => {
+    const { cliente, companheiro, trilha } = await conectado();
+    const objetivo = await companheiro.criarObjetivoAbstrato('usuario', {
+      trilhaId: trilha.id,
+      descricao: 'Conseguir a certificação',
+    });
+
+    const resposta = await cliente.callTool({
+      name: 'gravar_resumo',
+      arguments: {
+        trilha_id: trilha.id,
+        semana_de: '2026-09-28',
+        texto: 'Semana curta, mas com foco.',
+        fontes: [{ titulo: 'Especificação do MCP', url: 'https://modelcontextprotocol.io' }],
+        recomendacoes: [
+          {
+            objetivo_id: objetivo.id,
+            tipo: 'material',
+            titulo: 'Autorização no MCP',
+            descricao: 'O capítulo de OAuth.',
+            url: 'https://modelcontextprotocol.io/specification',
+          },
+        ],
+      },
+    });
+
+    expect(resposta.isError).toBeFalsy();
+    expect(await companheiro.listarResumos('usuario', { trilhaId: trilha.id })).toMatchObject([
+      {
+        semana: { de: '2026-09-28', ate: '2026-10-04' },
+        texto: 'Semana curta, mas com foco.',
+        recomendacoes: [{ objetivoId: objetivo.id, tipo: 'material' }],
+      },
+    ]);
   });
 
   it('registrar_sessao cria a Sessão pelo chat no Companheiro', async () => {

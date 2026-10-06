@@ -18,6 +18,7 @@ describe('Início', () => {
     expect(await companheiro.inicio('usuario')).toEqual({
       totalSegundos: 0,
       diasEstudadosNoMes: 0,
+      ultimoResumoEm: null,
       trilhas: [],
     });
   });
@@ -49,6 +50,7 @@ describe('Início', () => {
           marcoParaCelebrar: 10,
         },
         objetivosEmAndamento: [{ ...objetivo, estudadoSegundos: 11 * 3600 }],
+        ultimoResumo: null,
       },
       {
         trilha: violao,
@@ -59,6 +61,7 @@ describe('Início', () => {
           marcoParaCelebrar: null,
         },
         objetivosEmAndamento: [],
+        ultimoResumo: null,
       },
     ]);
   });
