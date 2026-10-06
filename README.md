@@ -25,14 +25,11 @@ Para o `.env` local, use `API_URL` e `ANON_KEY` de `npx supabase status -o env`.
 
 - **CI** (`.github/workflows/ci.yml`): roda em todo PR e push no `main`. Faz typecheck, sobe o Supabase local, roda os testes e o build.
 - **Deploy do app**: feito pela integração Git da Vercel. PRs ganham preview e o `main` vai para produção.
-- **Migrações** (`.github/workflows/migrations.yml`): a cada push no `main` que altere `supabase/migrations/`, aplica as migrações no projeto Supabase de produção.
+- **Migrações**: feitas pela integração GitHub do Supabase. A cada push no `main` que altere `supabase/`, ela aplica as migrações no projeto de produção.
 
 ### Configuração única (manual)
 
-1. **Vercel:** importe este repositório em vercel.com/new (o framework Astro é detectado sozinho). Cadastre as variáveis de `.env.example` em Settings → Environment Variables.
-2. **Supabase:** crie o projeto em supabase.com. Em GitHub → Settings → Secrets and variables → Actions, adicione:
-   - `SUPABASE_ACCESS_TOKEN`: token pessoal (supabase.com/dashboard/account/tokens)
-   - `SUPABASE_DB_PASSWORD`: a senha do banco do projeto
-   - `SUPABASE_PROJECT_ID`: a referência do projeto (aparece na URL do dashboard)
+1. **Vercel:** importe este repositório em vercel.com/new (o framework Astro é detectado sozinho). Cadastre `PUBLIC_SUPABASE_URL` e `PUBLIC_SUPABASE_ANON_KEY` em Settings → Environment Variables, para Production e Preview. A integração Vercel ↔ Supabase cria variáveis com outros nomes (`NEXT_PUBLIC_*`, `SUPABASE_*`), que o Astro não expõe ao navegador.
+2. **Supabase:** crie o projeto em supabase.com e ligue a integração GitHub (Project Settings → Integrations → GitHub) a este repositório, com diretório `.` e *Deploy to production* ativado.
 3. **Auth do Supabase (produção):** em Authentication → URL Configuration, defina o *Site URL* como o domínio da Vercel e adicione `https://<domínio>/auth/callback` em *Redirect URLs*. Sem isso o magic link não volta para o app.
 4. **Proteção do `main`:** em Settings → Branches, exija que o check `verify` passe antes do merge.
