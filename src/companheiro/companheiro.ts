@@ -102,6 +102,43 @@ export function objetivoParaCelebrar(objetivos: Objetivo[]): Objetivo | null {
   return ultimo.situacao === 'concluido' ? ultimo : null;
 }
 
+// Proposta concreta do Claude num Resumo, sempre ligada a um Objetivo da
+// Trilha. `material` é o Material Extra, que todo Resumo traz.
+export type TipoRecomendacao = 'projeto' | 'roteiro' | 'deck' | 'material';
+
+export interface Recomendacao {
+  id: string;
+  objetivoId: string;
+  tipo: TipoRecomendacao;
+  titulo: string;
+  descricao: string;
+  url: string | null;
+}
+
+export interface Fonte {
+  titulo: string;
+  url: string;
+}
+
+// Análise semanal do Claude por Trilha, de segunda a domingo em São Paulo.
+export interface Resumo {
+  id: string;
+  trilhaId: string;
+  semana: { de: Data; ate: Data };
+  texto: string;
+  fontes: Fonte[];
+  geradoEm: Date;
+  recomendacoes: Recomendacao[];
+}
+
+export interface NovaRecomendacao {
+  objetivoId: string;
+  tipo: TipoRecomendacao;
+  titulo: string;
+  descricao: string;
+  url?: string;
+}
+
 // Horas acumuladas e a barra até o próximo Marco de uma Trilha.
 export interface ProgressoDaTrilha {
   trilhaId: string;
@@ -313,6 +350,59 @@ const paraAbstrato = (linha: LinhaAbstrato): ObjetivoAbstrato => ({
 });
 
 const HORA_S = 3600;
+
+const TIPOS_DE_RECOMENDACAO: TipoRecomendacao[] = ['projeto', 'roteiro', 'deck', 'material'];
+
+// Só links web: nada de javascript:, data: ou caminhos soltos na página.
+function ehLink(texto: string | undefined): boolean {
+  try {
+    return ['http:', 'https:'].includes(new URL(texto ?? '').protocol);
+  } catch {
+    return false;
+  }
+}
+
+interface LinhaResumo {
+  id: string;
+  trilha_id: string;
+  semana_de: string;
+  semana_ate: string;
+  texto: string;
+  fontes: Fonte[];
+  gerado_em: string;
+  recomendacoes: {
+    id: string;
+    objetivo_id: string;
+    posicao: number;
+    tipo: TipoRecomendacao;
+    titulo: string;
+    descricao: string;
+    url: string | null;
+  }[];
+}
+
+const COLUNAS_RESUMO =
+  'id, trilha_id, semana_de, semana_ate, texto, fontes, gerado_em, ' +
+  'recomendacoes (id, objetivo_id, posicao, tipo, titulo, descricao, url)';
+
+const paraResumo = (linha: LinhaResumo): Resumo => ({
+  id: linha.id,
+  trilhaId: linha.trilha_id,
+  semana: { de: linha.semana_de, ate: linha.semana_ate },
+  texto: linha.texto,
+  fontes: linha.fontes,
+  geradoEm: new Date(linha.gerado_em),
+  recomendacoes: [...linha.recomendacoes]
+    .sort((a, b) => a.posicao - b.posicao)
+    .map((r) => ({
+      id: r.id,
+      objetivoId: r.objetivo_id,
+      tipo: r.tipo,
+      titulo: r.titulo,
+      descricao: r.descricao,
+      url: r.url,
+    })),
+});
 
 export function criarCompanheiro({ supabase, relogio = () => new Date() }: Dependencias) {
   // Lê o timer já com a Inatividade aplicada, sem gravar nada (serve a qualquer Ator).
@@ -796,6 +886,89 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
         .is('concluido_em', null);
       if (error) throw error;
       return paraAbstrato(await buscar());
+    },
+
+    // O Resumo é do Claude (ADR 0002): ele cria, e ninguém edita nem apaga.
+    async criarResumo(
+      ator: Ator,
+      {
+        trilhaId,
+        semanaDe: segunda,
+        texto,
+        fontes,
+        recomendacoes,
+      }: {
+        trilhaId: string;
+        // A segunda-feira que abre a semana coberta.
+        semanaDe: Data;
+        texto: string;
+        fontes: Fonte[];
+        recomendacoes: NovaRecomendacao[];
+      },
+    ): Promise<Resumo> {
+      if (ator !== 'claude') throw new PermissaoNegada(ator, 'escrever Resumo');
+      if (!ehData(segunda) || semanaDe(segunda).de !== segunda)
+        throw new EntradaInvalida('A semana começa numa segunda (AAAA-MM-DD).');
+      if (segunda > dataDe(relogio())) throw new EntradaInvalida('Essa semana ainda não começou.');
+      texto = texto.trim();
+      if (!texto) throw new EntradaInvalida('O Resumo precisa de texto.');
+      if (fontes.length === 0) throw new EntradaInvalida('O Resumo se apoia em pelo menos uma fonte.');
+      for (const fonte of fontes) {
+        if (!fonte.titulo?.trim() || !ehLink(fonte.url))
+          throw new EntradaInvalida('Cada fonte precisa de título e de um link http(s).');
+      }
+      for (const r of recomendacoes) {
+        if (!TIPOS_DE_RECOMENDACAO.includes(r.tipo))
+          throw new EntradaInvalida('Recomendação é projeto, roteiro, deck ou material.');
+        if (!r.titulo?.trim()) throw new EntradaInvalida('Toda Recomendação precisa de título.');
+        if (r.url !== undefined && r.url !== null && !ehLink(r.url))
+          throw new EntradaInvalida('O link da Recomendação precisa ser http(s).');
+      }
+      if (!recomendacoes.some((r) => r.tipo === 'material'))
+        throw new EntradaInvalida('Todo Resumo traz pelo menos um Material Extra.');
+      await garantirTrilhaAtiva(trilhaId);
+      const daTrilha = new Set((await objetivosDaTrilha(trilhaId)).map((o) => o.id));
+      if (!recomendacoes.every((r) => daTrilha.has(r.objetivoId)))
+        throw new EntradaInvalida('Toda Recomendação aponta um Objetivo desta Trilha.');
+
+      const { data: id, error } = await supabase.rpc('criar_resumo', {
+        p_trilha: trilhaId,
+        p_semana_de: segunda,
+        p_texto: texto,
+        p_fontes: fontes.map((f) => ({ titulo: f.titulo.trim(), url: f.url })),
+        p_gerado_em: relogio().toISOString(),
+        p_recomendacoes: recomendacoes.map((r) => ({
+          objetivo_id: r.objetivoId,
+          tipo: r.tipo,
+          titulo: r.titulo.trim(),
+          descricao: r.descricao?.trim() ?? '',
+          url: r.url ?? null,
+        })),
+      });
+      if (error) throw error;
+      const { data, error: erroLeitura } = await supabase
+        .from('resumos')
+        .select(COLUNAS_RESUMO)
+        .eq('id', id)
+        .single<LinhaResumo>();
+      if (erroLeitura) throw erroLeitura;
+      return paraResumo(data);
+    },
+
+    // Todo Ator lê tudo. A linha do tempo da Trilha: mais recentes primeiro.
+    async listarResumos(
+      _ator: Ator,
+      { trilhaId, limite }: { trilhaId: string; limite?: number },
+    ): Promise<Resumo[]> {
+      let consulta = supabase
+        .from('resumos')
+        .select(COLUNAS_RESUMO)
+        .eq('trilha_id', trilhaId)
+        .order('gerado_em', { ascending: false });
+      if (limite !== undefined) consulta = consulta.limit(limite);
+      const { data, error } = await consulta.overrideTypes<LinhaResumo[], { merge: false }>();
+      if (error) throw error;
+      return data.map(paraResumo);
     },
 
     // Todo Ator lê tudo. Na ordem em que foram criados.

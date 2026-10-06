@@ -18,10 +18,13 @@ const LEITURAS: Operacao[] = [
   'listarObjetivos',
   'progressoDaTrilha',
   'inicio',
+  'listarResumos',
 ];
-// O Claude cria, a pedido do usuário pelo chat: Sessões com nota e Objetivo
-// numa Trilha sem Objetivo em andamento.
+// O Claude cria: Resumos (com Recomendações), toda semana; e, a pedido do
+// usuário pelo chat, Sessões com nota e Objetivo numa Trilha sem Objetivo em
+// andamento.
 const CRIACOES_DO_CLAUDE: Operacao[] = [
+  'criarResumo',
   'registrarSessao',
   'criarObjetivoMensuravel',
   'criarObjetivoAbstrato',
@@ -41,7 +44,7 @@ const SO_DO_USUARIO: Operacao[] = [
 ];
 
 // Uma conta com de tudo: Trilha ativa e arquivada, Sessões, Objetivos dos dois
-// tipos, um Marco batido e o timer ligado (pausado por Inatividade).
+// tipos, um Resumo, um Marco batido e o timer ligado (pausado por Inatividade).
 async function contaCheia() {
   const relogio = relogioFixo('2026-10-09T12:00:00Z');
   const companheiro = criarCompanheiro({ supabase: await novoUsuario(), relogio });
@@ -56,6 +59,23 @@ async function contaCheia() {
     metaHoras: 40,
     periodo: 'mes',
   });
+  const resumoDa = (semanaDe: string, texto: string) =>
+    companheiro.criarResumo('claude', {
+      trilhaId: japones.id,
+      semanaDe,
+      texto,
+      fontes: [{ titulo: 'JLPT', url: 'https://www.jlpt.jp' }],
+      recomendacoes: [
+        {
+          objetivoId: abstrato.id,
+          tipo: 'material',
+          titulo: 'Simulado oficial',
+          descricao: 'Para medir o ritmo.',
+          url: 'https://www.jlpt.jp/e/samples',
+        },
+      ],
+    });
+  await resumoDa('2026-09-28', 'Semana de kana.');
   await companheiro.registrarSessao('usuario', {
     trilhaId: japones.id,
     minutos: 11 * 60,
@@ -84,6 +104,7 @@ async function contaCheia() {
     objetivos: await companheiro.listarObjetivos('claude', { trilhaId: japones.id }),
     progresso: await companheiro.progressoDaTrilha('claude', { trilhaId: japones.id }),
     inicio: await companheiro.inicio('claude'),
+    resumos: await companheiro.listarResumos('claude', { trilhaId: japones.id }),
   });
 
   // Uma chamada plausível de cada operação, com dados de verdade da conta.
@@ -95,6 +116,8 @@ async function contaCheia() {
     listarObjetivos: () => companheiro.listarObjetivos('claude', { trilhaId: japones.id }),
     progressoDaTrilha: () => companheiro.progressoDaTrilha('claude', { trilhaId: japones.id }),
     inicio: () => companheiro.inicio('claude'),
+    listarResumos: () => companheiro.listarResumos('claude', { trilhaId: japones.id }),
+    criarResumo: () => resumoDa('2026-10-05', 'Semana de kanji.'),
     registrarSessao: () =>
       companheiro.registrarSessao('claude', { trilhaId: japones.id, minutos: 5, nota: 'x' }),
     criarObjetivoMensuravel: () =>
@@ -118,7 +141,7 @@ async function contaCheia() {
     celebrarMarco: () => companheiro.celebrarMarco('claude', { trilhaId: japones.id, marco: 10 }),
   };
 
-  return { companheiro, relogio, japones, violao, retrato, chamar };
+  return { companheiro, relogio, japones, violao, retrato, chamar, resumoDa };
 }
 
 describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
@@ -151,7 +174,7 @@ describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
   });
 
   it('o que o Claude cria só acrescenta: o que já existia continua igual', async () => {
-    const { companheiro, japones, retrato } = await contaCheia();
+    const { companheiro, japones, retrato, resumoDa } = await contaCheia();
     const antes = await retrato();
 
     // Na Trilha com Objetivo em andamento, o Claude não define outro.
@@ -165,8 +188,11 @@ describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
       fim: new Date('2026-10-09T11:50:00Z'),
     });
 
+    const resumo = await resumoDa('2026-10-05', 'Semana de kanji.');
+
     const depois = await retrato();
     expect(depois.sessoes).toEqual([nova, ...antes.sessoes]);
+    expect(depois.resumos).toEqual([resumo, ...antes.resumos]);
     expect(depois.trilhas).toEqual(antes.trilhas);
     expect(depois.arquivadas).toEqual(antes.arquivadas);
     expect(depois.timer).toEqual(antes.timer);
