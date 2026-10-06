@@ -5,7 +5,7 @@ Um companheiro de estudos pessoal (de um usuário só). Ele registra quanto se e
 ## Glossário
 
 **Trilha**
-Um assunto de estudo, como "Claude Certified Architect". Todas as Trilhas têm a mesma estrutura e só mudam de assunto. Na interface, cada Trilha é uma aba.
+Um assunto de estudo, como "Claude Certified Architect". Todas as Trilhas têm a mesma estrutura e só mudam de assunto. Na interface, cada Trilha é uma aba. Uma Trilha *arquivada* sai das abas e fica só para consulta, com Sessões e Objetivos intactos; ela não recebe timer nem Objetivo novo.
 
 **Sessão**
 Um período contínuo de estudo dentro de uma Trilha, com início, fim e duração. A forma principal de criar uma Sessão é pelo timer. Para estudos feitos longe do app, o registro é feito pelo chat do Claude, que guarda também uma nota do que foi estudado. A regra é exigir o mínimo de entrada manual.

@@ -6,7 +6,9 @@ import {
   criarCompanheiro,
   EntradaInvalida,
   INATIVIDADE_MS,
+  objetivoParaCelebrar,
   semObjetivoEmAndamento,
+  type Objetivo,
   type ObjetivoMensuravel,
   type Periodo,
   type Sessao,
@@ -16,49 +18,87 @@ import { FUSO } from '../lib/hora';
 
 const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
 
-// A página atende dois formulários: criar Trilha e definir Objetivo.
+// A página atende os formulários de Trilha e de Objetivo: criar Trilha,
+// definir, concluir e, depois da celebração, arquivar a Trilha.
 let erro: string | null = null;
 let erroObjetivo: string | null = null;
 let enviado: FormData | null = null;
 if (Astro.request.method === 'POST') {
   enviado = await Astro.request.formData();
   const campo = (nome: string) => String(enviado?.get(nome) ?? '');
+  const voltar = (extra = '') =>
+    Astro.redirect(`/?trilha=${encodeURIComponent(campo('trilha'))}${extra}`, 303);
   try {
     if (campo('acao') === 'definir-objetivo') {
       const trilhaId = campo('trilha');
-      const escolha = campo('periodo');
-      const periodo: Periodo =
-        escolha === 'semana' || escolha === 'mes' ? escolha : { de: campo('de'), ate: campo('ate') };
-      await companheiro.criarObjetivoMensuravel('usuario', {
-        trilhaId,
-        metaHoras: Number(campo('horas').replace(',', '.')),
-        periodo,
-      });
-      return Astro.redirect(`/?trilha=${encodeURIComponent(trilhaId)}`, 303);
+      if (campo('tipo') === 'abstrato') {
+        await companheiro.criarObjetivoAbstrato('usuario', {
+          trilhaId,
+          descricao: campo('descricao'),
+        });
+      } else {
+        const escolha = campo('periodo');
+        const periodo: Periodo =
+          escolha === 'semana' || escolha === 'mes'
+            ? escolha
+            : { de: campo('de'), ate: campo('ate') };
+        await companheiro.criarObjetivoMensuravel('usuario', {
+          trilhaId,
+          metaHoras: Number(campo('horas').replace(',', '.')),
+          periodo,
+        });
+      }
+      return voltar();
+    }
+    if (campo('acao') === 'concluir-objetivo') {
+      await companheiro.concluirObjetivo('usuario', { objetivoId: campo('objetivo') });
+      return voltar('&celebrar=1');
+    }
+    if (campo('acao') === 'arquivar-trilha') {
+      await companheiro.arquivarTrilha('usuario', { trilhaId: campo('trilha') });
+      return Astro.redirect(`/?arquivada=${encodeURIComponent(campo('trilha'))}`, 303);
     }
     const trilha = await companheiro.criarTrilha('usuario', { nome: campo('nome') });
     return Astro.redirect(`/?trilha=${trilha.id}`, 303);
   } catch (e) {
     if (!(e instanceof EntradaInvalida)) throw e;
-    if (campo('acao') === 'definir-objetivo') erroObjetivo = e.message;
-    else erro = e.message;
+    if (campo('acao') === '' || campo('acao') === 'criar-trilha') erro = e.message;
+    else erroObjetivo = e.message;
   }
 }
 
 const trilhas = await companheiro.listarTrilhas('usuario');
+const arquivadas = await companheiro.listarTrilhasArquivadas('usuario');
 const idEscolhido =
   Astro.url.searchParams.get('trilha') ?? (erroObjetivo ? String(enviado?.get('trilha')) : null);
-const criando = idEscolhido === 'nova' || trilhas.length === 0;
-const atual = criando ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]);
+// Uma Trilha arquivada abre só para consulta, fora das abas.
+const consultando = arquivadas.find((t) => t.id === idEscolhido);
+const criando = !consultando && (idEscolhido === 'nova' || trilhas.length === 0);
+const atual =
+  consultando ?? (criando ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]));
+const recemArquivada = arquivadas.find((t) => t.id === Astro.url.searchParams.get('arquivada'));
 const timer = await companheiro.timerLigado('usuario');
 const timerAqui = timer && atual && timer.trilhaId === atual.id ? timer : null;
 const timerEm = timer && !timerAqui ? trilhas.find((t) => t.id === timer.trilhaId) : undefined;
-const sessoes = atual ? await companheiro.listarSessoes('usuario', { trilhaId: atual.id, limite: 10 }) : [];
+// Na consulta de uma Trilha arquivada, todas as Sessões; nas abas, as 10 mais recentes.
+const sessoes = atual
+  ? await companheiro.listarSessoes('usuario', {
+      trilhaId: atual.id,
+      limite: consultando ? undefined : 10,
+    })
+  : [];
 const objetivos = atual ? await companheiro.listarObjetivos('usuario', { trilhaId: atual.id }) : [];
 const emAndamento = objetivos.filter((o) => o.situacao === 'em-andamento');
-const pedirObjetivo = semObjetivoEmAndamento(objetivos);
+const pedirObjetivo = !consultando && semObjetivoEmAndamento(objetivos);
+const celebrado = consultando ? null : objetivoParaCelebrar(objetivos);
+// A animação da celebração toca na hora da conclusão; depois, fica parada.
+const celebrarAgora = Astro.url.searchParams.has('celebrar');
 // Sem Objetivo em andamento, o último que acabou dá contexto ao pedido.
-const ultimoQueAcabou = pedirObjetivo ? objetivos.at(-1) : undefined;
+const ultimoQueAcabou = pedirObjetivo ? (celebrado ?? objetivos.at(-1)) : undefined;
+// Na consulta de uma Trilha arquivada, todo o histórico de Objetivos.
+const objetivosVisiveis = consultando
+  ? objetivos
+  : [...emAndamento, ...(ultimoQueAcabou ? [ultimoQueAcabou] : [])];
 
 const agora = new Date();
 const pausaAutomatica = timer && new Date(timer.ultimaInteracaoEm.getTime() + INATIVIDADE_MS);
@@ -72,6 +112,7 @@ const semana = semanaDe(hoje);
 const valorEnviado = (nome: string, padrao = '') =>
   erroObjetivo ? String(enviado?.get(nome) ?? padrao) : padrao;
 const periodoEnviado = valorEnviado('periodo', 'mes');
+const tipoEnviado = valorEnviado('tipo', 'mensuravel');
 
 // Datas de calendário viram texto pela meia-noite delas em São Paulo.
 const emData = (d: Data, opcoes: Intl.DateTimeFormatOptions) =>
@@ -140,60 +181,199 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
           <span aria-hidden="true">+</span> Nova Trilha
         </a>
       </li>
+      {arquivadas.length > 0 && (
+        <li class="aba-arquivadas">
+          <a href="/arquivadas" aria-current={consultando ? 'page' : undefined}>
+            Arquivadas
+          </a>
+        </li>
+      )}
     </ul>
   </nav>
 
   <main>
+    {recemArquivada && (
+      <p class="aviso" role="status">
+        {recemArquivada.nome} foi arquivada. Ela continua em{' '}
+        <a href="/arquivadas">Arquivadas</a>, com todo o histórico.
+      </p>
+    )}
     {
       atual ? (
         <div class="trilha">
           <section class="cabeca">
             <h1>{atual.nome}</h1>
-            <p class="suave">Trilha criada em {dataLonga(atual.criadaEm)}.</p>
+            <p class="suave">
+              Trilha criada em {dataLonga(atual.criadaEm)}
+              {atual.arquivadaEm ? `, arquivada em ${dataLonga(atual.arquivadaEm)}.` : '.'}
+            </p>
           </section>
 
           <section class="objetivos" aria-label="Objetivos">
-            {[...emAndamento, ...(ultimoQueAcabou ? [ultimoQueAcabou] : [])].map((o) => (
-              <article class="objetivo" data-situacao={o.situacao}>
-                <div class="objetivo-cabeca">
-                  <h2>
-                    {horas(o.metaHoras * 3600)} de estudo {descreverPeriodo(o.periodo)}
-                  </h2>
-                  <span class="placar" aria-hidden="true">
-                    {horas(o.estudadoSegundos)}{' '}
-                    <span class="suave">/ {horas(o.metaHoras * 3600)}</span>
-                  </span>
-                </div>
-                <BarraDeProgresso
-                  valor={o.estudadoSegundos}
-                  maximo={o.metaHoras * 3600}
-                  rotulo="Progresso do Objetivo"
-                  texto={progresso(o)}
-                  apagada={o.situacao === 'encerrado'}
-                />
-                <p class="suave">
-                  {o.situacao === 'em-andamento' &&
-                    (o.periodo.de > hoje
-                      ? `Começa em ${diaMes(o.periodo.de)}.`
-                      : `Faltam ${faltam(o)}, até ${diaMes(o.periodo.ate)}.`)}
-                  {o.situacao === 'concluido' &&
-                    `Meta batida em ${dataLonga(o.concluidoEm!)}.`}
-                  {o.situacao === 'encerrado' &&
-                    `O período acabou em ${diaMes(o.periodo.ate)}, com ${progresso(o)}.`}
+            {objetivosVisiveis.map((o) =>
+              o.tipo === 'mensuravel' ? (
+                <article
+                  class="objetivo"
+                  data-situacao={o.situacao}
+                  data-celebrando={(celebrarAgora && o.id === celebrado?.id) || undefined}
+                >
+                  <div class="objetivo-cabeca">
+                    <h2>
+                      {horas(o.metaHoras * 3600)} de estudo {descreverPeriodo(o.periodo)}
+                    </h2>
+                    <span class="placar" aria-hidden="true">
+                      {horas(o.estudadoSegundos)}{' '}
+                      <span class="suave">/ {horas(o.metaHoras * 3600)}</span>
+                    </span>
+                  </div>
+                  <BarraDeProgresso
+                    valor={o.estudadoSegundos}
+                    maximo={o.metaHoras * 3600}
+                    rotulo="Progresso do Objetivo"
+                    texto={progresso(o)}
+                    apagada={o.situacao === 'encerrado'}
+                  />
+                  <p class="suave">
+                    {o.situacao === 'em-andamento' &&
+                      (o.periodo.de > hoje
+                        ? `Começa em ${diaMes(o.periodo.de)}.`
+                        : `Faltam ${faltam(o)}, até ${diaMes(o.periodo.ate)}.`)}
+                    {o.situacao === 'concluido' &&
+                      `Meta batida em ${dataLonga(o.concluidoEm!)}.`}
+                    {o.situacao === 'encerrado' &&
+                      `O período acabou em ${diaMes(o.periodo.ate)}, com ${progresso(o)}.`}
+                  </p>
+                </article>
+              ) : (
+                <article
+                  class="objetivo"
+                  data-situacao={o.situacao}
+                  data-celebrando={(celebrarAgora && o.id === celebrado?.id) || undefined}
+                >
+                  <div class="objetivo-cabeca">
+                    <h2>{o.descricao}</h2>
+                    <span class="placar" aria-hidden="true">
+                      {o.situacao === 'concluido' ? (
+                        <span class="suave">concluído</span>
+                      ) : (
+                        <>
+                          {o.itens.concluidos} <span class="suave">/ {o.itens.total} itens</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {/* Concluído é chegar lá: a barra enche, mesmo sem itens ligados. */}
+                  <BarraDeProgresso
+                    valor={o.situacao === 'concluido' ? 1 : o.itens.concluidos}
+                    maximo={o.situacao === 'concluido' ? 1 : o.itens.total}
+                    rotulo="Progresso do Objetivo"
+                    texto={
+                      o.situacao === 'concluido'
+                        ? 'Concluído'
+                        : `${o.itens.concluidos} de ${o.itens.total} itens concluídos`
+                    }
+                  />
+                  {o.situacao === 'concluido' ? (
+                    <p class="suave">Concluído em {dataLonga(o.concluidoEm!)}.</p>
+                  ) : (
+                    <>
+                      <p class="suave">
+                        {o.itens.total === 0
+                          ? 'Nenhum item ligado ainda. Projetos e materiais aceitos vão aparecer aqui.'
+                          : `${o.itens.concluidos} de ${o.itens.total} itens concluídos.`}
+                      </p>
+                      {!consultando && (
+                        <details class="concluir">
+                          <summary>Concluir Objetivo</summary>
+                          <form method="post" class="concluir-confirma">
+                            <input type="hidden" name="acao" value="concluir-objetivo" />
+                            <input type="hidden" name="trilha" value={atual.id} />
+                            <input type="hidden" name="objetivo" value={o.id} />
+                            <p>Você chegou lá? Concluir não tem volta.</p>
+                            <button type="submit">Sim, concluir</button>
+                          </form>
+                        </details>
+                      )}
+                    </>
+                  )}
+                </article>
+              ),
+            )}
+
+            {consultando && objetivos.length === 0 && (
+              <p class="suave">Esta Trilha não teve Objetivos.</p>
+            )}
+
+            {celebrado && (
+              <div class="celebracao" data-agora={celebrarAgora || undefined} role="status">
+                <h2>Você chegou lá.</h2>
+                <p>
+                  {celebrado.tipo === 'abstrato'
+                    ? `“${celebrado.descricao}” está concluído.`
+                    : `A meta de ${horas(celebrado.metaHoras * 3600)} foi batida.`}{' '}
+                  E agora: um novo Objetivo ou guardar a Trilha?
                 </p>
-              </article>
-            ))}
+                <div class="escolhas">
+                  <a class="escolha" href="#titulo-pedido">
+                    <span class="escolha-titulo">Definir o próximo Objetivo</span>
+                    <span class="escolha-explica">A Trilha continua nas abas.</span>
+                  </a>
+                  <form method="post" class="escolha-form">
+                    <input type="hidden" name="acao" value="arquivar-trilha" />
+                    <input type="hidden" name="trilha" value={atual.id} />
+                    <button class="escolha" type="submit">
+                      <span class="escolha-titulo">Arquivar a Trilha</span>
+                      <span class="escolha-explica">Sai das abas, com o histórico guardado.</span>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {pedirObjetivo && (
               <div class="pedido">
                 <h2 id="titulo-pedido">
                   {objetivos.length === 0 ? 'Qual é o Objetivo desta Trilha?' : 'Qual é o próximo Objetivo?'}
                 </h2>
-                <p class="suave">Uma meta de horas num período. Cada Sessão avança a barra.</p>
+                <p class="suave">
+                  Uma meta de horas num período, ou algo que você quer alcançar.
+                </p>
                 <form method="post" class="definir" aria-labelledby="titulo-pedido">
                   <input type="hidden" name="acao" value="definir-objetivo" />
                   <input type="hidden" name="trilha" value={atual.id} />
-                  <div class="campo campo-horas">
+                  <fieldset class="tipo">
+                    <legend class="visualmente-oculto">Tipo de Objetivo</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name="tipo"
+                        value="mensuravel"
+                        checked={tipoEnviado !== 'abstrato'}
+                      />
+                      Meta de horas
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="tipo"
+                        value="abstrato"
+                        checked={tipoEnviado === 'abstrato'}
+                      />
+                      Algo a alcançar
+                    </label>
+                  </fieldset>
+                  <div class="campo campo-descricao so-abstrato">
+                    <label for="descricao">O que você quer alcançar?</label>
+                    <input
+                      id="descricao"
+                      name="descricao"
+                      type="text"
+                      maxlength="120"
+                      placeholder="Ex.: conseguir a certificação"
+                      value={valorEnviado('descricao')}
+                    />
+                  </div>
+                  <div class="campo campo-horas so-mensuravel">
                     <label for="horas">Horas</label>
                     <input
                       id="horas"
@@ -204,10 +384,9 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
                       step="0.5"
                       placeholder="10"
                       value={valorEnviado('horas')}
-                      required
                     />
                   </div>
-                  <div class="campo campo-periodo">
+                  <div class="campo campo-periodo so-mensuravel">
                     <label for="periodo">Período</label>
                     <select id="periodo" name="periodo">
                       <option value="mes" selected={periodoEnviado === 'mes'}>
@@ -221,7 +400,7 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
                       </option>
                     </select>
                   </div>
-                  <fieldset class="datas">
+                  <fieldset class="datas so-mensuravel">
                     <legend class="visualmente-oculto">Datas do período</legend>
                     <div class="campo">
                       <label for="de">De</label>
@@ -239,114 +418,120 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
             )}
           </section>
 
-          <section class="timer" aria-label="Timer">
-            {timerAqui?.pausadoPorInatividade ? (
-              <>
-                <Cronometro
-                  client:load
-                  estudadoMs={timerAqui.estudadoMs}
-                  pausado
-                  trilha={atual.nome}
-                />
-                <p class="suave" role="status">
-                  Sem interação desde {hora(timerAqui.ultimaInteracaoEm)}, o timer pausou sozinho
-                  às {hora(pausaAutomatica!)}.
-                </p>
-                <div class="volta">
-                  <h2 id="titulo-volta">Até quando você estudou?</h2>
-                  <form method="post" action="/timer" class="opcoes" aria-labelledby="titulo-volta">
+          {!consultando && (
+            <section class="timer" aria-label="Timer">
+              {timerAqui?.pausadoPorInatividade ? (
+                <>
+                  <Cronometro
+                    client:load
+                    estudadoMs={timerAqui.estudadoMs}
+                    pausado
+                    trilha={atual.nome}
+                  />
+                  <p class="suave" role="status">
+                    Sem interação desde {hora(timerAqui.ultimaInteracaoEm)}, o timer pausou sozinho
+                    às {hora(pausaAutomatica!)}.
+                  </p>
+                  <div class="volta">
+                    <h2 id="titulo-volta">Até quando você estudou?</h2>
+                    <form method="post" action="/timer" class="opcoes" aria-labelledby="titulo-volta">
+                      <input type="hidden" name="trilha" value={atual.id} />
+                      <input type="hidden" name="acao" value="fim-do-estudo" />
+                      {[
+                        { ate: timerAqui.ultimaInteracaoEm, explica: 'última vez que mexi no app' },
+                        { ate: pausaAutomatica!, explica: 'quando o timer pausou' },
+                        { ate: agora, explica: 'estudei até agora' },
+                      ].map(({ ate, explica }) => (
+                        <button class="opcao" type="submit" name="ate" value={ate.toISOString()}>
+                          <span class="opcao-hora">{hora(ate)}</span>
+                          <span class="opcao-explica">{explica}</span>
+                        </button>
+                      ))}
+                    </form>
+                    <form method="post" action="/timer" class="outro-horario">
+                      <input type="hidden" name="trilha" value={atual.id} />
+                      <input type="hidden" name="acao" value="fim-do-estudo" />
+                      <label for="hora">Outro horário</label>
+                      <div class="linha">
+                        <input id="hora" name="hora" type="time" required />
+                        <button class="botao-secundario" type="submit">Confirmar</button>
+                      </div>
+                    </form>
+                    {erroFim && (
+                      <p class="erro" role="alert">
+                        Escolha um horário entre {hora(timerAqui.ultimaInteracaoEm)} e agora.
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : timerAqui ? (
+                <>
+                  <Cronometro
+                    client:load
+                    estudadoMs={timerAqui.estudadoMs}
+                    pausado={timerAqui.pausado}
+                    trilha={atual.nome}
+                  />
+                  <p class="suave" role="status">
+                    {timerAqui.pausado
+                      ? 'Pausado. A pausa não conta como estudo.'
+                      : `Contando desde ${hora(timerAqui.iniciadoEm)}.`}
+                  </p>
+                  <form method="post" action="/timer" class="encerrar">
                     <input type="hidden" name="trilha" value={atual.id} />
-                    <input type="hidden" name="acao" value="fim-do-estudo" />
-                    {[
-                      { ate: timerAqui.ultimaInteracaoEm, explica: 'última vez que mexi no app' },
-                      { ate: pausaAutomatica!, explica: 'quando o timer pausou' },
-                      { ate: agora, explica: 'estudei até agora' },
-                    ].map(({ ate, explica }) => (
-                      <button class="opcao" type="submit" name="ate" value={ate.toISOString()}>
-                        <span class="opcao-hora">{hora(ate)}</span>
-                        <span class="opcao-explica">{explica}</span>
+                    <label for="nota">O que você estudou? (opcional)</label>
+                    <input
+                      id="nota"
+                      name="nota"
+                      type="text"
+                      maxlength="500"
+                      placeholder="Ex.: kanji da lição 4"
+                    />
+                    <div class="acoes">
+                      <button type="submit" name="acao" value="encerrar">
+                        Encerrar Sessão
                       </button>
-                    ))}
-                  </form>
-                  <form method="post" action="/timer" class="outro-horario">
-                    <input type="hidden" name="trilha" value={atual.id} />
-                    <input type="hidden" name="acao" value="fim-do-estudo" />
-                    <label for="hora">Outro horário</label>
-                    <div class="linha">
-                      <input id="hora" name="hora" type="time" required />
-                      <button class="botao-secundario" type="submit">Confirmar</button>
+                      <button
+                        class="botao-secundario"
+                        type="submit"
+                        name="acao"
+                        value={timerAqui.pausado ? 'retomar' : 'pausar'}
+                      >
+                        {timerAqui.pausado ? 'Retomar' : 'Pausar'}
+                      </button>
                     </div>
                   </form>
-                  {erroFim && (
-                    <p class="erro" role="alert">
-                      Escolha um horário entre {hora(timerAqui.ultimaInteracaoEm)} e agora.
+                </>
+              ) : (
+                <>
+                  <span class="cronometro-parado" aria-hidden="true">00:00:00</span>
+                  {timerEm ? (
+                    <p class="suave" role="status">
+                      O timer está {timer?.pausado ? 'pausado' : 'ligado'} em{' '}
+                      <a href={`/?trilha=${timerEm.id}`}>{timerEm.nome}</a>. Só um conta por vez.
                     </p>
+                  ) : (
+                    <p class="suave">Ligue o timer quando começar a estudar.</p>
                   )}
-                </div>
-              </>
-            ) : timerAqui ? (
-              <>
-                <Cronometro
-                  client:load
-                  estudadoMs={timerAqui.estudadoMs}
-                  pausado={timerAqui.pausado}
-                  trilha={atual.nome}
-                />
-                <p class="suave" role="status">
-                  {timerAqui.pausado
-                    ? 'Pausado. A pausa não conta como estudo.'
-                    : `Contando desde ${hora(timerAqui.iniciadoEm)}.`}
-                </p>
-                <form method="post" action="/timer" class="encerrar">
-                  <input type="hidden" name="trilha" value={atual.id} />
-                  <label for="nota">O que você estudou? (opcional)</label>
-                  <input
-                    id="nota"
-                    name="nota"
-                    type="text"
-                    maxlength="500"
-                    placeholder="Ex.: kanji da lição 4"
-                  />
-                  <div class="acoes">
-                    <button type="submit" name="acao" value="encerrar">
-                      Encerrar Sessão
+                  <form method="post" action="/timer" class="acoes">
+                    <input type="hidden" name="trilha" value={atual.id} />
+                    <button type="submit" name="acao" value="iniciar" disabled={!!timerEm}>
+                      Iniciar timer
                     </button>
-                    <button
-                      class="botao-secundario"
-                      type="submit"
-                      name="acao"
-                      value={timerAqui.pausado ? 'retomar' : 'pausar'}
-                    >
-                      {timerAqui.pausado ? 'Retomar' : 'Pausar'}
-                    </button>
-                  </div>
-                </form>
-              </>
-            ) : (
-              <>
-                <span class="cronometro-parado" aria-hidden="true">00:00:00</span>
-                {timerEm ? (
-                  <p class="suave" role="status">
-                    O timer está {timer?.pausado ? 'pausado' : 'ligado'} em{' '}
-                    <a href={`/?trilha=${timerEm.id}`}>{timerEm.nome}</a>. Só um conta por vez.
-                  </p>
-                ) : (
-                  <p class="suave">Ligue o timer quando começar a estudar.</p>
-                )}
-                <form method="post" action="/timer" class="acoes">
-                  <input type="hidden" name="trilha" value={atual.id} />
-                  <button type="submit" name="acao" value="iniciar" disabled={!!timerEm}>
-                    Iniciar timer
-                  </button>
-                </form>
-              </>
-            )}
-          </section>
+                  </form>
+                </>
+              )}
+            </section>
+          )}
 
           <section class="sessoes" aria-labelledby="titulo-sessoes">
-            <h2 id="titulo-sessoes">Sessões recentes</h2>
+            <h2 id="titulo-sessoes">{consultando ? 'Sessões' : 'Sessões recentes'}</h2>
             {sessoes.length === 0 ? (
-              <p class="suave">Nenhuma Sessão ainda. A primeira sai do timer.</p>
+              <p class="suave">
+                {consultando
+                  ? 'Esta Trilha não teve Sessões.'
+                  : 'Nenhuma Sessão ainda. A primeira sai do timer.'}
+              </p>
             ) : (
               <ol>
                 {sessoes.map((s) => (
@@ -614,6 +799,165 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
 
   .datas .campo {
     flex: 1 1 10rem;
+  }
+
+  /* Tipo de Objetivo: os campos de cada tipo aparecem conforme a escolha (sem JS). */
+  .tipo {
+    display: flex;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .tipo label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--raio);
+    box-shadow: inset 0 0 0 1px var(--linha);
+    cursor: pointer;
+  }
+
+  .tipo label:has(:checked) {
+    box-shadow: inset 0 0 0 1px var(--destaque);
+  }
+
+  .tipo input {
+    accent-color: var(--destaque);
+    margin: 0;
+  }
+
+  .so-abstrato {
+    display: none;
+  }
+
+  .definir:has([name='tipo'][value='abstrato']:checked) .so-abstrato {
+    display: grid;
+  }
+
+  .definir:has([name='tipo'][value='abstrato']:checked) .so-mensuravel {
+    display: none;
+  }
+
+  .campo-descricao {
+    flex: 1 1 18rem;
+  }
+
+  /* Concluir pede um segundo toque: não tem volta. */
+  .concluir summary {
+    width: fit-content;
+    color: var(--texto-suave);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .concluir summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .concluir[open] summary {
+    color: var(--texto);
+  }
+
+  .concluir-confirma {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-top: 0.75rem;
+  }
+
+  .celebracao {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .celebracao h2 {
+    font-size: clamp(1.75rem, 5vw, 2.25rem);
+    color: var(--destaque);
+  }
+
+  .escolhas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .escolha-form {
+    display: contents;
+  }
+
+  .escolha {
+    display: grid;
+    align-content: start;
+    gap: 0.25rem;
+    padding: 0.875rem 1rem;
+    text-align: left;
+    text-decoration: none;
+    white-space: normal;
+    background: var(--superficie);
+    color: var(--texto);
+    border-radius: var(--raio);
+    box-shadow: inset 0 0 0 1px var(--linha);
+  }
+
+  .escolha:hover {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px var(--destaque);
+  }
+
+  .escolha-titulo {
+    font-weight: 500;
+  }
+
+  .escolha-explica {
+    font-size: 0.8125rem;
+    color: var(--texto-suave);
+  }
+
+  /* O momento da celebração: na hora da conclusão, a barra enche de uma vez e
+     o título chega logo depois. Nas visitas seguintes, tudo já está no lugar. */
+  @media (prefers-reduced-motion: no-preference) {
+    .objetivo[data-celebrando] :global(.barra::before) {
+      animation: encher 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .celebracao[data-agora] h2 {
+      animation: chegar 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+    }
+  }
+
+  @keyframes encher {
+    from {
+      width: 0;
+    }
+  }
+
+  @keyframes chegar {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+      filter: blur(4px);
+    }
+  }
+
+  .aviso {
+    width: min(100%, 36rem);
+    margin-bottom: 2rem;
+    padding: 0.75rem 1rem;
+    background: var(--superficie);
+    border-radius: var(--raio);
+  }
+
+  .aba-arquivadas {
+    margin-left: auto;
   }
 
   .cronometro-parado {
