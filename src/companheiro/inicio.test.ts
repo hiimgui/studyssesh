@@ -25,6 +25,8 @@ describe('Início', () => {
   it('consolida o total geral e, por Trilha, as horas, o Marco e os Objetivos em andamento', async () => {
     const { companheiro, relogio } = await companheiroNovo('2026-10-08T12:00:00Z');
     const japones = await companheiro.criarTrilha('usuario', { nome: 'Japonês' });
+    // As Trilhas seguem a ordem de criação; no mesmo instante, ela empataria.
+    relogio.avancar(MINUTO);
     const violao = await companheiro.criarTrilha('usuario', { nome: 'Violão' });
     const objetivo = await companheiro.criarObjetivoMensuravel('usuario', {
       trilhaId: japones.id,

@@ -225,6 +225,8 @@ describe('Objetivo mensurável: bordas de período em America/Sao_Paulo', () => 
       metaHoras: 10,
       periodo: 'mes',
     });
+    // Os Objetivos seguem a ordem de criação; no mesmo instante, ela empataria.
+    relogio.avancar(MINUTO);
     const novembro = await companheiro.criarObjetivoMensuravel('usuario', {
       trilhaId: trilha.id,
       metaHoras: 10,

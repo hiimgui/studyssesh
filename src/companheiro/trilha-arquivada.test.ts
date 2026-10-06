@@ -8,6 +8,8 @@ async function japonesComHistorico() {
   const relogio = relogioFixo('2026-10-08T12:00:00Z');
   const companheiro = criarCompanheiro({ supabase: await novoUsuario(), relogio });
   const japones = await companheiro.criarTrilha('usuario', { nome: 'Japonês' });
+  // As abas seguem a ordem de criação; no mesmo instante, a ordem empataria.
+  relogio.avancar(MINUTO);
   const violao = await companheiro.criarTrilha('usuario', { nome: 'Violão' });
   const objetivo = await companheiro.criarObjetivoAbstrato('usuario', {
     trilhaId: japones.id,
@@ -30,7 +32,7 @@ describe('Trilha arquivada', () => {
 
     expect(await companheiro.listarTrilhas('usuario')).toEqual([violao]);
     expect(await companheiro.listarTrilhasArquivadas('usuario')).toEqual([
-      { ...japones, arquivadaEm: new Date('2026-10-08T12:41:00Z') },
+      { ...japones, arquivadaEm: new Date('2026-10-08T12:42:00Z') },
     ]);
     expect(await companheiro.listarSessoes('usuario', { trilhaId: japones.id })).toEqual([sessao]);
     expect(await companheiro.listarObjetivos('usuario', { trilhaId: japones.id })).toEqual(
