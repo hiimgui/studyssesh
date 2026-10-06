@@ -23,10 +23,10 @@ Se uma Trilha não tiver nenhum Objetivo em andamento (nenhum criado, ou todos c
 O progresso aparece sempre como barra. Num Objetivo mensurável, ela mede horas sobre a meta. Num Objetivo abstrato, mede a proporção de itens concluídos ligados a ele (projetos e itens da Biblioteca). Ao concluir um Objetivo, há uma celebração e o usuário escolhe se arquiva a Trilha ou define um novo Objetivo.
 
 **Marco**
-Um patamar de horas acumuladas numa Trilha (10h, 25h, 50h, 100h…). Sempre existe uma barra até o próximo Marco.
+Um patamar de horas acumuladas numa Trilha: 10h, 25h, 50h, 100h e, dali em diante, a cada 100h. Sempre existe uma barra até o próximo Marco. Cada Marco batido é celebrado uma vez, até o usuário dispensar, em qualquer aparelho. Se uma Sessão passar por dois Marcos de uma vez, celebra-se só o maior.
 
 **Início**
-A tela que consolida todas as Trilhas: o timer rápido, o total de horas, os dias estudados no mês, as barras de progresso e o último Resumo de cada Trilha.
+A tela que consolida todas as Trilhas: o timer rápido, o total de horas, os dias estudados no mês, as barras de progresso e o último Resumo de cada Trilha. Os *dias estudados no mês* são os dias distintos, no fuso America/Sao_Paulo, em que alguma Sessão começou. O contador só cresce dentro do mês; um dia sem estudo não zera nada.
 
 **Resumo**
 Análise semanal gerada pelo Claude, por Trilha, a partir das Sessões, dos Objetivos e das Decisões passadas. É opinativa e se apoia em fontes confiáveis. Tolera atrasos: uma semana fraca leva a um novo plano, nunca a uma bronca. Sempre traz Material Extra, de fontes confiáveis em português ou inglês. Todos os Resumos ficam guardados numa linha do tempo da Trilha.

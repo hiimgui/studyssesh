@@ -1,0 +1,279 @@
+---
+import BarraDeProgresso from './BarraDeProgresso.svelte';
+import BarraDoMarco from './BarraDoMarco.astro';
+import Celebracao from './Celebracao.astro';
+import Cronometro from './Cronometro.svelte';
+import type { Inicio, TimerLigado } from '../companheiro/companheiro';
+import { dataDe } from '../companheiro/fuso';
+import { horas, nomeDoMes, progresso, tituloDoObjetivo } from '../lib/formato';
+
+// A tela Início: consolida todas as Trilhas, com o timer rápido no topo.
+interface Props {
+  inicio: Inicio;
+  timer: TimerLigado | null;
+}
+
+const { inicio, timer } = Astro.props;
+const { totalSegundos, diasEstudadosNoMes, trilhas } = inicio;
+const mes = nomeDoMes(dataDe(new Date()));
+const trilhaDoTimer = timer && trilhas.find((t) => t.trilha.id === timer.trilhaId)?.trilha;
+const celebrar = trilhas.filter((t) => t.progresso.marcoParaCelebrar !== null);
+---
+
+<div class="inicio">
+  <section class="cabeca">
+    <h1>Início</h1>
+    <p class="geral">
+      <strong>{horas(totalSegundos)}</strong> de estudo no total.{' '}
+      {
+        diasEstudadosNoMes === 0 ? (
+          <>Nenhum dia estudado em {mes} ainda.</>
+        ) : (
+          <>
+            <strong>
+              {diasEstudadosNoMes} {diasEstudadosNoMes === 1 ? 'dia' : 'dias'}
+            </strong>{' '}
+            com estudo em {mes}.
+          </>
+        )
+      }
+    </p>
+  </section>
+
+  {
+    celebrar.map(({ trilha, progresso }) => (
+      <Celebracao trilha={trilha} marco={progresso.marcoParaCelebrar!} voltar="/" />
+    ))
+  }
+
+  <section class="timer-rapido" aria-labelledby="titulo-timer">
+    <h2 id="titulo-timer">Timer</h2>
+    {
+      timer && trilhaDoTimer ? (
+        <>
+          <Cronometro
+            client:load
+            estudadoMs={timer.estudadoMs}
+            pausado={timer.pausado}
+            trilha={trilhaDoTimer.nome}
+          />
+          <p class="suave" role="status">
+            {timer.pausadoPorInatividade
+              ? 'Pausou sozinho por falta de interação. Na Trilha, diga até quando estudou.'
+              : timer.pausado
+                ? `Pausado em ${trilhaDoTimer.nome}.`
+                : `Contando em ${trilhaDoTimer.nome}.`}
+          </p>
+          <div class="acoes">
+            <a class="botao" href={`/?trilha=${trilhaDoTimer.id}`}>
+              Abrir {trilhaDoTimer.nome}
+            </a>
+          </div>
+        </>
+      ) : (
+        <>
+          <p class="suave">Escolha a Trilha e comece a contar.</p>
+          <form method="post" action="/timer" class="acoes">
+            <input type="hidden" name="acao" value="iniciar" />
+            {trilhas.map(({ trilha }) => (
+              <button class="botao-secundario" type="submit" name="trilha" value={trilha.id}>
+                <svg aria-hidden="true" viewBox="0 0 10 12" width="9" height="11"><path d="M1 1.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L1.9.7a.6.6 0 0 0-.9.5Z" fill="currentColor" /></svg>{trilha.nome}
+              </button>
+            ))}
+          </form>
+        </>
+      )
+    }
+  </section>
+
+  <section class="trilhas" aria-labelledby="titulo-trilhas">
+    <h2 id="titulo-trilhas">Trilhas</h2>
+    <ul>
+      {
+        trilhas.map(({ trilha, progresso: daTrilha, objetivosEmAndamento }) => (
+          <li>
+            <a class="nome" href={`/?trilha=${trilha.id}`}>
+              {trilha.nome}
+            </a>
+            <BarraDoMarco progresso={daTrilha} nivel={3} />
+            {objetivosEmAndamento.length === 0 ? (
+              <p class="suave">
+                Sem Objetivo em andamento. <a href={`/?trilha=${trilha.id}`}>Definir um</a>.
+              </p>
+            ) : (
+              objetivosEmAndamento.map((o) =>
+                o.tipo === 'mensuravel' ? (
+                  <div class="objetivo">
+                    <div class="objetivo-cabeca">
+                      <h3>{tituloDoObjetivo(o)}</h3>
+                      <span class="placar" aria-hidden="true">
+                        {horas(o.estudadoSegundos)}{' '}
+                        <span class="suave">/ {horas(o.metaHoras * 3600)}</span>
+                      </span>
+                    </div>
+                    <BarraDeProgresso
+                      valor={o.estudadoSegundos}
+                      maximo={o.metaHoras * 3600}
+                      rotulo="Progresso do Objetivo"
+                      texto={progresso(o)}
+                    />
+                  </div>
+                ) : (
+                  <div class="objetivo">
+                    <div class="objetivo-cabeca">
+                      <h3>{o.descricao}</h3>
+                      <span class="placar" aria-hidden="true">
+                        {o.itens.concluidos} <span class="suave">/ {o.itens.total} itens</span>
+                      </span>
+                    </div>
+                    <BarraDeProgresso
+                      valor={o.itens.concluidos}
+                      maximo={o.itens.total}
+                      rotulo="Progresso do Objetivo"
+                      texto={`${o.itens.concluidos} de ${o.itens.total} itens concluídos`}
+                    />
+                  </div>
+                ),
+              )
+            )}
+            <div class="resumo" aria-label="Último Resumo">
+              <h3>Último Resumo</h3>
+              <p class="suave">Ainda não há Resumo desta Trilha.</p>
+            </div>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</div>
+
+<style>
+  .inicio {
+    display: grid;
+    gap: clamp(2.5rem, 7vw, 4rem);
+  }
+
+  section {
+    display: grid;
+    gap: 1rem;
+    max-width: 36rem;
+  }
+
+  .cabeca {
+    gap: 0.75rem;
+  }
+
+  .geral {
+    font-size: 1.0625rem;
+    color: var(--texto-suave);
+    text-wrap: pretty;
+  }
+
+  .geral strong {
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--texto);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .timer-rapido {
+    gap: 0.75rem;
+  }
+
+  .acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .acoes button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .acoes svg {
+    color: var(--destaque);
+  }
+
+  .botao {
+    display: inline-block;
+    padding: 0.625rem 1rem;
+    border-radius: var(--raio);
+    background: var(--texto);
+    color: var(--fundo);
+    text-decoration: none;
+  }
+
+  .botao:hover {
+    opacity: 0.88;
+  }
+
+  .trilhas ul {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .trilhas li {
+    display: grid;
+    gap: 1.25rem;
+    padding-block: 1.75rem;
+    border-top: 1px solid var(--linha);
+  }
+
+  .trilhas li:last-child {
+    border-bottom: 1px solid var(--linha);
+  }
+
+  .nome {
+    justify-self: start;
+    font-family: var(--fonte-titulo);
+    font-size: 1.25rem;
+    line-height: 1.2;
+    text-decoration: none;
+  }
+
+  .nome:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .objetivo {
+    display: grid;
+    gap: 0.625rem;
+  }
+
+  .objetivo-cabeca {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: inherit;
+    font-weight: 500;
+  }
+
+  .placar {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .resumo {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.875rem 1rem;
+    border-radius: var(--raio);
+    border: 1px dashed var(--linha);
+  }
+
+  .resumo h3 {
+    font-size: 0.8125rem;
+    color: var(--texto-suave);
+  }
+</style>

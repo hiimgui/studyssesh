@@ -2,19 +2,28 @@
 import Base from '../layouts/Base.astro';
 import Cronometro from '../components/Cronometro.svelte';
 import BarraDeProgresso from '../components/BarraDeProgresso.svelte';
+import BarraDoMarco from '../components/BarraDoMarco.astro';
+import Celebracao from '../components/Celebracao.astro';
+import Inicio from '../components/Inicio.astro';
 import {
   criarCompanheiro,
   EntradaInvalida,
   INATIVIDADE_MS,
   objetivoParaCelebrar,
   semObjetivoEmAndamento,
-  type Objetivo,
-  type ObjetivoMensuravel,
   type Periodo,
   type Sessao,
 } from '../companheiro/companheiro';
-import { dataDe, meiaNoite, mesDe, semanaDe, type Data } from '../companheiro/fuso';
+import { dataDe, semanaDe } from '../companheiro/fuso';
 import { FUSO } from '../lib/hora';
+import {
+  descreverPeriodo,
+  diaMes,
+  faltam,
+  horas,
+  nomeDoMes,
+  progresso,
+} from '../lib/formato';
 
 const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
 
@@ -74,9 +83,16 @@ const idEscolhido =
 // Uma Trilha arquivada abre só para consulta, fora das abas.
 const consultando = arquivadas.find((t) => t.id === idEscolhido);
 const criando = !consultando && (idEscolhido === 'nova' || trilhas.length === 0);
+// Sem Trilha escolhida, a página é o Início.
+const noInicio = !consultando && !criando && !idEscolhido;
 const atual =
-  consultando ?? (criando ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]));
+  consultando ??
+  (criando || noInicio ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]));
 const recemArquivada = arquivadas.find((t) => t.id === Astro.url.searchParams.get('arquivada'));
+const inicio = noInicio ? await companheiro.inicio('usuario') : null;
+const progressoAqui = atual
+  ? await companheiro.progressoDaTrilha('usuario', { trilhaId: atual.id })
+  : null;
 const timer = await companheiro.timerLigado('usuario');
 const timerAqui = timer && atual && timer.trilhaId === atual.id ? timer : null;
 const timerEm = timer && !timerAqui ? trilhas.find((t) => t.id === timer.trilhaId) : undefined;
@@ -114,30 +130,6 @@ const valorEnviado = (nome: string, padrao = '') =>
 const periodoEnviado = valorEnviado('periodo', 'mes');
 const tipoEnviado = valorEnviado('tipo', 'mensuravel');
 
-// Datas de calendário viram texto pela meia-noite delas em São Paulo.
-const emData = (d: Data, opcoes: Intl.DateTimeFormatOptions) =>
-  meiaNoite(d).toLocaleDateString('pt-BR', { ...opcoes, timeZone: FUSO });
-const diaMes = (d: Data) => emData(d, { day: 'numeric', month: 'long' });
-const nomeDoMes = (d: Data) => emData(d, { month: 'long' });
-const descreverPeriodo = ({ de, ate }: ObjetivoMensuravel['periodo']) => {
-  const mes = mesDe(de);
-  if (mes.de === de && mes.ate === ate) return `em ${nomeDoMes(de)}`;
-  if (de === ate) return `em ${diaMes(de)}`;
-  if (de.slice(0, 7) === ate.slice(0, 7)) return `de ${Number(de.slice(8))} a ${diaMes(ate)}`;
-  return `de ${diaMes(de)} a ${diaMes(ate)}`;
-};
-// Horas de estudo em texto curto: "45 min", "3h", "4h 30min".
-const horas = (segundos: number) => {
-  const minutos = Math.floor(segundos / 60);
-  if (minutos < 60) return `${minutos} min`;
-  const resto = minutos % 60;
-  return `${Math.floor(minutos / 60)}h${resto ? ` ${String(resto).padStart(2, '0')}min` : ''}`;
-};
-const progresso = (o: ObjetivoMensuravel) =>
-  `${horas(o.estudadoSegundos)} de ${horas(o.metaHoras * 3600)}`;
-// O que falta arredonda o minuto para cima: com 9h 59min feitas de 10h, falta 1 min.
-const faltam = (o: ObjetivoMensuravel) =>
-  horas(Math.ceil(Math.max(0, o.metaHoras * 3600 - o.estudadoSegundos) / 60) * 60);
 const dataLonga = (d: Date) => d.toLocaleDateString('pt-BR', { dateStyle: 'long', timeZone: FUSO });
 const dia = (d: Date) =>
   d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: FUSO });
@@ -150,7 +142,7 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
 };
 ---
 
-<Base titulo={atual?.nome}>
+<Base titulo={atual?.nome ?? (noInicio ? 'Início' : undefined)}>
   <header>
     <span class="marca">Aibou</span>
     <form method="post" action="/sair">
@@ -160,6 +152,15 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
 
   <nav aria-label="Trilhas">
     <ul>
+      {
+        trilhas.length > 0 && (
+          <li>
+            <a href="/" aria-current={noInicio ? 'page' : undefined}>
+              Início
+            </a>
+          </li>
+        )
+      }
       {
         trilhas.map((t) => (
           <li>
@@ -207,6 +208,18 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
               Trilha criada em {dataLonga(atual.criadaEm)}
               {atual.arquivadaEm ? `, arquivada em ${dataLonga(atual.arquivadaEm)}.` : '.'}
             </p>
+          </section>
+
+          {!consultando && progressoAqui!.marcoParaCelebrar !== null && (
+            <Celebracao
+              trilha={atual}
+              marco={progressoAqui!.marcoParaCelebrar}
+              voltar={`/?trilha=${atual.id}`}
+            />
+          )}
+
+          <section class="marco" aria-label="Marco">
+            <BarraDoMarco progresso={progressoAqui!} />
           </section>
 
           <section class="objetivos" aria-label="Objetivos">
@@ -547,6 +560,8 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
             )}
           </section>
         </div>
+      ) : inicio ? (
+        <Inicio inicio={inicio} timer={timer} />
       ) : (
         <section>
           <h1>{trilhas.length === 0 ? 'O que você vai estudar?' : 'Nova Trilha'}</h1>

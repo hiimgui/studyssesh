@@ -98,6 +98,58 @@ export function objetivoParaCelebrar(objetivos: Objetivo[]): Objetivo | null {
   return ultimo.situacao === 'concluido' ? ultimo : null;
 }
 
+// Horas acumuladas e a barra até o próximo Marco de uma Trilha.
+export interface ProgressoDaTrilha {
+  trilhaId: string;
+  totalSegundos: number;
+  // Em horas. `anterior` é 0 antes do primeiro Marco.
+  marco: { anterior: number; proximo: number };
+  // O Marco batido que o usuário ainda não viu celebrado.
+  marcoParaCelebrar: number | null;
+}
+
+// A tela Início: tudo o que consolida as Trilhas. Os totais contam também as
+// Trilhas arquivadas (o estudo aconteceu); a lista traz só as das abas.
+export interface Inicio {
+  totalSegundos: number;
+  // Dias distintos com Sessão no mês de hoje, em São Paulo. Só cresce no mês.
+  diasEstudadosNoMes: number;
+  trilhas: {
+    trilha: Trilha;
+    progresso: ProgressoDaTrilha;
+    objetivosEmAndamento: Objetivo[];
+  }[];
+}
+
+const PRIMEIROS_MARCOS = [10, 25, 50, 100];
+
+// Os Marcos são 10, 25, 50 e 100h e, dali em diante, a cada 100h. Devolve o
+// maior Marco já alcançado com `totalSegundos` (0 se nenhum) e o próximo.
+function marcosEm(totalSegundos: number): { anterior: number; proximo: number } {
+  const horasCheias = Math.floor(totalSegundos / 3600);
+  if (horasCheias >= 100) {
+    const anterior = Math.floor(horasCheias / 100) * 100;
+    return { anterior, proximo: anterior + 100 };
+  }
+  const proximo = PRIMEIROS_MARCOS.find((m) => m > horasCheias)!;
+  const anterior = PRIMEIROS_MARCOS.findLast((m) => m <= horasCheias) ?? 0;
+  return { anterior, proximo };
+}
+
+function comMarcos(
+  trilhaId: string,
+  totalSegundos: number,
+  marcoCelebrado: number,
+): ProgressoDaTrilha {
+  const marco = marcosEm(totalSegundos);
+  return {
+    trilhaId,
+    totalSegundos,
+    marco,
+    marcoParaCelebrar: marco.anterior > marcoCelebrado ? marco.anterior : null,
+  };
+}
+
 // O Ator não tem permissão para a operação (ex.: o Claude criando Trilha).
 export class PermissaoNegada extends Error {
   constructor(ator: Ator, operacao: string) {
@@ -373,6 +425,21 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
         .is('concluido_em', null);
       if (erroConcluir) throw erroConcluir;
     }
+  }
+
+  async function progressoDe(trilhaId: string): Promise<ProgressoDaTrilha> {
+    const [sessoes, trilha] = await Promise.all([
+      supabase.from('sessoes').select('duracao_segundos').eq('trilha_id', trilhaId),
+      supabase
+        .from('trilhas')
+        .select('marco_celebrado_horas')
+        .eq('id', trilhaId)
+        .maybeSingle<{ marco_celebrado_horas: number }>(),
+    ]);
+    if (sessoes.error) throw sessoes.error;
+    if (trilha.error) throw trilha.error;
+    const totalSegundos = sessoes.data.reduce((soma, s) => soma + s.duracao_segundos, 0);
+    return comMarcos(trilhaId, totalSegundos, trilha.data?.marco_celebrado_horas ?? 0);
   }
 
   return {
@@ -670,6 +737,73 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     // Todo Ator lê tudo. Na ordem em que foram criados.
     async listarObjetivos(_ator: Ator, { trilhaId }: { trilhaId: string }): Promise<Objetivo[]> {
       return objetivosDaTrilha(trilhaId);
+    },
+
+    // Todo Ator lê tudo.
+    async progressoDaTrilha(
+      _ator: Ator,
+      { trilhaId }: { trilhaId: string },
+    ): Promise<ProgressoDaTrilha> {
+      return progressoDe(trilhaId);
+    },
+
+    // Todo Ator lê tudo. As Trilhas vêm como as abas: só as não arquivadas.
+    async inicio(_ator: Ator): Promise<Inicio> {
+      const [sessoes, trilhas] = await Promise.all([
+        supabase.from('sessoes').select('trilha_id, inicio, duracao_segundos'),
+        supabase
+          .from('trilhas')
+          .select(`${COLUNAS_TRILHA}, marco_celebrado_horas`)
+          .is('arquivada_em', null)
+          .order('criada_em')
+          .overrideTypes<(LinhaTrilha & { marco_celebrado_horas: number })[], { merge: false }>(),
+      ]);
+      if (sessoes.error) throw sessoes.error;
+      if (trilhas.error) throw trilhas.error;
+
+      const mes = mesDe(dataDe(relogio()));
+      const diasNoMes = new Set<Data>();
+      const porTrilha = new Map<string, number>();
+      let totalSegundos = 0;
+      for (const s of sessoes.data) {
+        totalSegundos += s.duracao_segundos;
+        porTrilha.set(s.trilha_id, (porTrilha.get(s.trilha_id) ?? 0) + s.duracao_segundos);
+        const dia = dataDe(new Date(s.inicio));
+        if (dia >= mes.de && dia <= mes.ate) diasNoMes.add(dia);
+      }
+
+      return {
+        totalSegundos,
+        diasEstudadosNoMes: diasNoMes.size,
+        trilhas: await Promise.all(
+          trilhas.data.map(async (linha) => ({
+            trilha: paraTrilha(linha),
+            progresso: comMarcos(linha.id, porTrilha.get(linha.id) ?? 0, linha.marco_celebrado_horas),
+            objetivosEmAndamento: (await objetivosDaTrilha(linha.id)).filter(
+              (o) => o.situacao === 'em-andamento',
+            ),
+          })),
+        ),
+      };
+    },
+
+    // Marca que o usuário viu a celebração do Marco. Só o usuário: para o
+    // Claude, isso seria editar a Trilha.
+    async celebrarMarco(
+      ator: Ator,
+      { trilhaId, marco }: { trilhaId: string; marco: number },
+    ): Promise<void> {
+      if (ator !== 'usuario') throw new PermissaoNegada(ator, 'celebrar Marco');
+      const { marco: alcancado } = await progressoDe(trilhaId);
+      if (marco === 0 || marco !== alcancado.anterior)
+        throw new EntradaInvalida('Esse Marco não é o último batido na Trilha.');
+      // Celebrar de novo não muda nada (ex.: o mesmo toque em dois aparelhos).
+      const { error } = await supabase
+        .from('trilhas')
+        .update({ marco_celebrado_horas: marco })
+        .eq('id', trilhaId)
+        .lt('marco_celebrado_horas', marco);
+      if (error) throw error;
     },
   };
 }

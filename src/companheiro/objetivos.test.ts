@@ -3,9 +3,9 @@ import {
   criarCompanheiro,
   EntradaInvalida,
   PermissaoNegada,
-  type Companheiro,
   type Periodo,
 } from './companheiro';
+import { estudar } from '../test/estudar';
 import { novoUsuario, relogioFixo } from '../test/usuarios';
 
 const MINUTO = 60_000;
@@ -282,20 +282,3 @@ describe('Objetivo mensurável: bordas de período em America/Sao_Paulo', () => 
     expect(objetivo).toMatchObject({ estudadoSegundos: 5 * 60, situacao: 'encerrado' });
   });
 });
-
-// Uma Sessão de `minutos` pelo timer, seguida de 1h sem estudo. A pessoa mexe
-// no app a cada meia hora, para a Inatividade não pausar o timer.
-async function estudar(
-  companheiro: Companheiro,
-  relogio: ReturnType<typeof relogioFixo>,
-  trilhaId: string,
-  minutos: number,
-) {
-  await companheiro.iniciarTimer('usuario', { trilhaId });
-  for (let falta = minutos; falta > 0; falta -= 30) {
-    relogio.avancar(Math.min(falta, 30) * MINUTO);
-    await companheiro.registrarInteracao('usuario');
-  }
-  await companheiro.encerrarTimer('usuario');
-  relogio.avancar(60 * MINUTO);
-}
