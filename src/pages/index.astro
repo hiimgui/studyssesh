@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
-import { criarCompanheiro, EntradaInvalida } from '../companheiro/companheiro';
+import Cronometro from '../components/Cronometro.svelte';
+import { criarCompanheiro, EntradaInvalida, type Sessao } from '../companheiro/companheiro';
 
 const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
 
@@ -20,8 +21,22 @@ const trilhas = await companheiro.listarTrilhas('usuario');
 const idEscolhido = Astro.url.searchParams.get('trilha');
 const criando = idEscolhido === 'nova' || trilhas.length === 0;
 const atual = criando ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]);
-const dataLonga = (d: Date) =>
-  d.toLocaleDateString('pt-BR', { dateStyle: 'long', timeZone: 'America/Sao_Paulo' });
+const timer = await companheiro.timerLigado('usuario');
+const timerAqui = timer && atual && timer.trilhaId === atual.id ? timer : null;
+const timerEm = timer && !timerAqui ? trilhas.find((t) => t.id === timer.trilhaId) : undefined;
+const sessoes = atual ? await companheiro.listarSessoes('usuario', { trilhaId: atual.id, limite: 10 }) : [];
+
+const FUSO = 'America/Sao_Paulo';
+const dataLonga = (d: Date) => d.toLocaleDateString('pt-BR', { dateStyle: 'long', timeZone: FUSO });
+const dia = (d: Date) =>
+  d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: FUSO });
+const hora = (d: Date) => d.toLocaleTimeString('pt-BR', { timeStyle: 'short', timeZone: FUSO });
+const duracao = ({ duracaoSegundos }: Sessao) => {
+  const minutos = Math.floor(duracaoSegundos / 60);
+  if (minutos < 1) return 'menos de 1 min';
+  if (minutos < 60) return `${minutos} min`;
+  return `${Math.floor(minutos / 60)}h ${String(minutos % 60).padStart(2, '0')}min`;
+};
 ---
 
 <Base titulo={atual?.nome}>
@@ -39,6 +54,13 @@ const dataLonga = (d: Date) =>
           <li>
             <a href={`/?trilha=${t.id}`} aria-current={t.id === atual?.id ? 'page' : undefined}>
               {t.nome}
+              {t.id === timer?.trilhaId && (
+                <span class="contando" data-pausado={timer.pausado || undefined}>
+                  <span class="visualmente-oculto">
+                    {timer.pausado ? '(timer pausado)' : '(timer ligado)'}
+                  </span>
+                </span>
+              )}
             </a>
           </li>
         ))
@@ -54,10 +76,91 @@ const dataLonga = (d: Date) =>
   <main>
     {
       atual ? (
-        <section>
-          <h1>{atual.nome}</h1>
-          <p class="suave">Trilha criada em {dataLonga(atual.criadaEm)}.</p>
-        </section>
+        <div class="trilha">
+          <section class="cabeca">
+            <h1>{atual.nome}</h1>
+            <p class="suave">Trilha criada em {dataLonga(atual.criadaEm)}.</p>
+          </section>
+
+          <section class="timer" aria-label="Timer">
+            {timerAqui ? (
+              <>
+                <Cronometro
+                  client:load
+                  estudadoMs={timerAqui.estudadoMs}
+                  pausado={timerAqui.pausado}
+                  trilha={atual.nome}
+                />
+                <p class="suave" role="status">
+                  {timerAqui.pausado
+                    ? 'Pausado. A pausa não conta como estudo.'
+                    : `Contando desde ${hora(timerAqui.iniciadoEm)}.`}
+                </p>
+                <form method="post" action="/timer" class="encerrar">
+                  <input type="hidden" name="trilha" value={atual.id} />
+                  <label for="nota">O que você estudou? (opcional)</label>
+                  <input
+                    id="nota"
+                    name="nota"
+                    type="text"
+                    maxlength="500"
+                    placeholder="Ex.: kanji da lição 4"
+                  />
+                  <div class="acoes">
+                    <button type="submit" name="acao" value="encerrar">
+                      Encerrar Sessão
+                    </button>
+                    <button
+                      class="botao-secundario"
+                      type="submit"
+                      name="acao"
+                      value={timerAqui.pausado ? 'retomar' : 'pausar'}
+                    >
+                      {timerAqui.pausado ? 'Retomar' : 'Pausar'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <>
+                <span class="cronometro-parado" aria-hidden="true">00:00:00</span>
+                {timerEm ? (
+                  <p class="suave" role="status">
+                    O timer está {timer?.pausado ? 'pausado' : 'ligado'} em{' '}
+                    <a href={`/?trilha=${timerEm.id}`}>{timerEm.nome}</a>. Só um conta por vez.
+                  </p>
+                ) : (
+                  <p class="suave">Ligue o timer quando começar a estudar.</p>
+                )}
+                <form method="post" action="/timer" class="acoes">
+                  <input type="hidden" name="trilha" value={atual.id} />
+                  <button type="submit" name="acao" value="iniciar" disabled={!!timerEm}>
+                    Iniciar timer
+                  </button>
+                </form>
+              </>
+            )}
+          </section>
+
+          <section class="sessoes" aria-labelledby="titulo-sessoes">
+            <h2 id="titulo-sessoes">Sessões recentes</h2>
+            {sessoes.length === 0 ? (
+              <p class="suave">Nenhuma Sessão ainda. A primeira sai do timer.</p>
+            ) : (
+              <ol>
+                {sessoes.map((s) => (
+                  <li>
+                    <span class="quando">
+                      <span>{dia(s.inicio)},</span> <span>{hora(s.inicio)}–{hora(s.fim)}</span>
+                    </span>
+                    <span class="duracao">{duracao(s)}</span>
+                    {s.nota && <span class="nota">{s.nota}</span>}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        </div>
       ) : (
         <section>
           <h1>{trilhas.length === 0 ? 'O que você vai estudar?' : 'Nova Trilha'}</h1>
@@ -147,6 +250,106 @@ const dataLonga = (d: Date) =>
 
   h1 {
     font-size: clamp(2rem, 6vw, 3rem);
+  }
+
+  h2 {
+    font-size: 1rem;
+  }
+
+  /* Bolinha na aba da Trilha onde o timer está ligado. */
+  .contando {
+    display: inline-block;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    margin-left: 0.5rem;
+    vertical-align: 0.15em;
+    border-radius: 50%;
+    background: var(--destaque);
+  }
+
+  .contando[data-pausado] {
+    background: none;
+    box-shadow: inset 0 0 0 1.5px var(--texto-suave);
+  }
+
+  .trilha {
+    display: grid;
+    gap: clamp(2.5rem, 7vw, 4rem);
+  }
+
+  .cabeca {
+    gap: 0.5rem;
+  }
+
+  .timer {
+    gap: 0.75rem;
+  }
+
+  .cronometro-parado {
+    font-size: clamp(3rem, 14vw, 5.5rem);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--texto-suave);
+  }
+
+  .acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .encerrar {
+    display: grid;
+    gap: 0.375rem;
+    margin-top: 0.75rem;
+  }
+
+  .encerrar label {
+    font-size: 0.8125rem;
+    color: var(--texto-suave);
+  }
+
+  .encerrar .acoes {
+    margin-top: 0.375rem;
+  }
+
+  .sessoes ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .sessoes li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 1rem;
+    padding-block: 0.75rem;
+    border-top: 1px solid var(--linha);
+  }
+
+  .sessoes li:last-child {
+    border-bottom: 1px solid var(--linha);
+  }
+
+  .quando {
+    color: var(--texto-suave);
+  }
+
+  .quando > span {
+    white-space: nowrap;
+  }
+
+  .duracao {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .nota {
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
   }
 
   .nova-trilha {

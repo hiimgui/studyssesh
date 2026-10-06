@@ -101,6 +101,30 @@ button:hover {
   opacity: 0.88;
 }
 
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.botao-secundario {
+  background: none;
+  color: var(--texto);
+  box-shadow: inset 0 0 0 1px var(--linha);
+}
+
+.botao-secundario:hover {
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px var(--texto-suave);
+}
+
+::selection {
+  background: color-mix(in oklch, var(--destaque) 30%, transparent);
+}
+
+input {
+  caret-color: var(--destaque);
+}
+
 .botao-discreto {
   padding: 0.25rem 0;
   background: none;
