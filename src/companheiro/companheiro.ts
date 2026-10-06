@@ -21,7 +21,11 @@ export interface Sessao {
   fim: Date;
   duracaoSegundos: number;
   nota: string | null;
+  // Do timer do app, ou registrada pelo chat do Claude (estudo longe do app).
+  origem: OrigemSessao;
 }
+
+export type OrigemSessao = 'timer' | 'chat';
 
 // O timer em andamento, como o servidor o vê agora.
 export interface TimerLigado {
@@ -122,6 +126,8 @@ export interface Inicio {
 }
 
 const PRIMEIROS_MARCOS = [10, 25, 50, 100];
+
+const MINUTOS_NUM_DIA = 24 * 60;
 
 // Os Marcos são 10, 25, 50 e 100h e, dali em diante, a cada 100h. Devolve o
 // maior Marco já alcançado com `totalSegundos` (0 se nenhum) e o próximo.
@@ -250,7 +256,10 @@ interface LinhaSessao {
   fim: string;
   duracao_segundos: number;
   nota: string | null;
+  origem: OrigemSessao;
 }
+
+const COLUNAS_SESSAO = 'id, trilha_id, inicio, fim, duracao_segundos, nota, origem';
 
 const paraSessao = (linha: LinhaSessao): Sessao => ({
   id: linha.id,
@@ -259,6 +268,7 @@ const paraSessao = (linha: LinhaSessao): Sessao => ({
   fim: new Date(linha.fim),
   duracaoSegundos: linha.duracao_segundos,
   nota: linha.nota,
+  origem: linha.origem,
 });
 
 interface LinhaMensuravel {
@@ -612,6 +622,51 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       return sessao;
     },
 
+    // Estudo feito longe do app, contado pelo chat: "estudei 1h30 de MCP hoje".
+    // A Sessão termina em `fim` (agora, se não vier) e dura `minutos`. Como no
+    // timer, pode bater a meta de Objetivos (ADR 0002: o Claude cria Sessões).
+    async registrarSessao(
+      _ator: Ator,
+      { trilhaId, minutos, nota, fim }: { trilhaId: string; minutos: number; nota: string; fim?: Date },
+    ): Promise<Sessao> {
+      nota = nota.trim();
+      if (!nota) throw new EntradaInvalida('Diga o que foi estudado: a nota é obrigatória.');
+      if (!Number.isFinite(minutos) || minutos <= 0 || minutos > MINUTOS_NUM_DIA)
+        throw new EntradaInvalida('A duração vai de 1 minuto a 24 horas.');
+      const agora = relogio();
+      const termino = fim ?? agora;
+      if (termino > agora) throw new EntradaInvalida('Só dá para registrar estudo que já aconteceu.');
+      const inicio = new Date(termino.getTime() - minutos * 60_000);
+      await garantirTrilhaAtiva(trilhaId);
+
+      // Nada conta duas vezes: o período não pode cruzar outra Sessão, de
+      // nenhuma Trilha (encostar, sim).
+      const { count, error: erroSobreposicao } = await supabase
+        .from('sessoes')
+        .select('id', { count: 'exact', head: true })
+        .lt('inicio', termino.toISOString())
+        .gt('fim', inicio.toISOString());
+      if (erroSobreposicao) throw erroSobreposicao;
+      if (count) throw new EntradaInvalida('Já há estudo registrado nesse horário.');
+
+      const { data, error } = await supabase
+        .from('sessoes')
+        .insert({
+          trilha_id: trilhaId,
+          inicio: inicio.toISOString(),
+          fim: termino.toISOString(),
+          duracao_segundos: Math.round(minutos * 60),
+          nota,
+          origem: 'chat',
+        })
+        .select(COLUNAS_SESSAO)
+        .single<LinhaSessao>();
+      if (error) throw error;
+      const sessao = paraSessao(data);
+      await concluirObjetivosBatidos(sessao);
+      return sessao;
+    },
+
     // Todo Ator lê tudo. Mais recentes primeiro.
     async listarSessoes(
       _ator: Ator,
@@ -619,7 +674,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     ): Promise<Sessao[]> {
       let consulta = supabase
         .from('sessoes')
-        .select('id, trilha_id, inicio, fim, duracao_segundos, nota')
+        .select(COLUNAS_SESSAO)
         .eq('trilha_id', trilhaId)
         .order('inicio', { ascending: false });
       if (limite !== undefined) consulta = consulta.limit(limite);
