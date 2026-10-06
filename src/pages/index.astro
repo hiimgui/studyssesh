@@ -1,36 +1,64 @@
 ---
 import Base from '../layouts/Base.astro';
 import Cronometro from '../components/Cronometro.svelte';
+import BarraDeProgresso from '../components/BarraDeProgresso.svelte';
 import {
   criarCompanheiro,
   EntradaInvalida,
   INATIVIDADE_MS,
+  semObjetivoEmAndamento,
+  type ObjetivoMensuravel,
+  type Periodo,
   type Sessao,
 } from '../companheiro/companheiro';
+import { dataDe, meiaNoite, mesDe, semanaDe, type Data } from '../companheiro/fuso';
 import { FUSO } from '../lib/hora';
 
 const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
 
+// A página atende dois formulários: criar Trilha e definir Objetivo.
 let erro: string | null = null;
+let erroObjetivo: string | null = null;
+let enviado: FormData | null = null;
 if (Astro.request.method === 'POST') {
-  const nome = String((await Astro.request.formData()).get('nome') ?? '');
+  enviado = await Astro.request.formData();
+  const campo = (nome: string) => String(enviado?.get(nome) ?? '');
   try {
-    const trilha = await companheiro.criarTrilha('usuario', { nome });
+    if (campo('acao') === 'definir-objetivo') {
+      const trilhaId = campo('trilha');
+      const escolha = campo('periodo');
+      const periodo: Periodo =
+        escolha === 'semana' || escolha === 'mes' ? escolha : { de: campo('de'), ate: campo('ate') };
+      await companheiro.criarObjetivoMensuravel('usuario', {
+        trilhaId,
+        metaHoras: Number(campo('horas').replace(',', '.')),
+        periodo,
+      });
+      return Astro.redirect(`/?trilha=${encodeURIComponent(trilhaId)}`, 303);
+    }
+    const trilha = await companheiro.criarTrilha('usuario', { nome: campo('nome') });
     return Astro.redirect(`/?trilha=${trilha.id}`, 303);
   } catch (e) {
     if (!(e instanceof EntradaInvalida)) throw e;
-    erro = e.message;
+    if (campo('acao') === 'definir-objetivo') erroObjetivo = e.message;
+    else erro = e.message;
   }
 }
 
 const trilhas = await companheiro.listarTrilhas('usuario');
-const idEscolhido = Astro.url.searchParams.get('trilha');
+const idEscolhido =
+  Astro.url.searchParams.get('trilha') ?? (erroObjetivo ? String(enviado?.get('trilha')) : null);
 const criando = idEscolhido === 'nova' || trilhas.length === 0;
 const atual = criando ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]);
 const timer = await companheiro.timerLigado('usuario');
 const timerAqui = timer && atual && timer.trilhaId === atual.id ? timer : null;
 const timerEm = timer && !timerAqui ? trilhas.find((t) => t.id === timer.trilhaId) : undefined;
 const sessoes = atual ? await companheiro.listarSessoes('usuario', { trilhaId: atual.id, limite: 10 }) : [];
+const objetivos = atual ? await companheiro.listarObjetivos('usuario', { trilhaId: atual.id }) : [];
+const emAndamento = objetivos.filter((o) => o.situacao === 'em-andamento');
+const pedirObjetivo = semObjetivoEmAndamento(objetivos);
+// Sem Objetivo em andamento, o último que acabou dá contexto ao pedido.
+const ultimoQueAcabou = pedirObjetivo ? objetivos.at(-1) : undefined;
 
 const agora = new Date();
 const pausaAutomatica = timer && new Date(timer.ultimaInteracaoEm.getTime() + INATIVIDADE_MS);
@@ -39,6 +67,36 @@ const erroFim = Astro.url.searchParams.get('erro') === 'fim';
 const msAteInatividade =
   timer && !timer.pausado ? Math.max(0, pausaAutomatica!.getTime() - agora.getTime()) : null;
 
+const hoje = dataDe(agora);
+const semana = semanaDe(hoje);
+const valorEnviado = (nome: string, padrao = '') =>
+  erroObjetivo ? String(enviado?.get(nome) ?? padrao) : padrao;
+const periodoEnviado = valorEnviado('periodo', 'mes');
+
+// Datas de calendário viram texto pela meia-noite delas em São Paulo.
+const emData = (d: Data, opcoes: Intl.DateTimeFormatOptions) =>
+  meiaNoite(d).toLocaleDateString('pt-BR', { ...opcoes, timeZone: FUSO });
+const diaMes = (d: Data) => emData(d, { day: 'numeric', month: 'long' });
+const nomeDoMes = (d: Data) => emData(d, { month: 'long' });
+const descreverPeriodo = ({ de, ate }: ObjetivoMensuravel['periodo']) => {
+  const mes = mesDe(de);
+  if (mes.de === de && mes.ate === ate) return `em ${nomeDoMes(de)}`;
+  if (de === ate) return `em ${diaMes(de)}`;
+  if (de.slice(0, 7) === ate.slice(0, 7)) return `de ${Number(de.slice(8))} a ${diaMes(ate)}`;
+  return `de ${diaMes(de)} a ${diaMes(ate)}`;
+};
+// Horas de estudo em texto curto: "45 min", "3h", "4h 30min".
+const horas = (segundos: number) => {
+  const minutos = Math.floor(segundos / 60);
+  if (minutos < 60) return `${minutos} min`;
+  const resto = minutos % 60;
+  return `${Math.floor(minutos / 60)}h${resto ? ` ${String(resto).padStart(2, '0')}min` : ''}`;
+};
+const progresso = (o: ObjetivoMensuravel) =>
+  `${horas(o.estudadoSegundos)} de ${horas(o.metaHoras * 3600)}`;
+// O que falta arredonda o minuto para cima: com 9h 59min feitas de 10h, falta 1 min.
+const faltam = (o: ObjetivoMensuravel) =>
+  horas(Math.ceil(Math.max(0, o.metaHoras * 3600 - o.estudadoSegundos) / 60) * 60);
 const dataLonga = (d: Date) => d.toLocaleDateString('pt-BR', { dateStyle: 'long', timeZone: FUSO });
 const dia = (d: Date) =>
   d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: FUSO });
@@ -92,6 +150,93 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
           <section class="cabeca">
             <h1>{atual.nome}</h1>
             <p class="suave">Trilha criada em {dataLonga(atual.criadaEm)}.</p>
+          </section>
+
+          <section class="objetivos" aria-label="Objetivos">
+            {[...emAndamento, ...(ultimoQueAcabou ? [ultimoQueAcabou] : [])].map((o) => (
+              <article class="objetivo" data-situacao={o.situacao}>
+                <div class="objetivo-cabeca">
+                  <h2>
+                    {horas(o.metaHoras * 3600)} de estudo {descreverPeriodo(o.periodo)}
+                  </h2>
+                  <span class="placar" aria-hidden="true">
+                    {horas(o.estudadoSegundos)}{' '}
+                    <span class="suave">/ {horas(o.metaHoras * 3600)}</span>
+                  </span>
+                </div>
+                <BarraDeProgresso
+                  valor={o.estudadoSegundos}
+                  maximo={o.metaHoras * 3600}
+                  rotulo="Progresso do Objetivo"
+                  texto={progresso(o)}
+                  apagada={o.situacao === 'encerrado'}
+                />
+                <p class="suave">
+                  {o.situacao === 'em-andamento' &&
+                    (o.periodo.de > hoje
+                      ? `Começa em ${diaMes(o.periodo.de)}.`
+                      : `Faltam ${faltam(o)}, até ${diaMes(o.periodo.ate)}.`)}
+                  {o.situacao === 'concluido' &&
+                    `Meta batida em ${dataLonga(o.concluidoEm!)}.`}
+                  {o.situacao === 'encerrado' &&
+                    `O período acabou em ${diaMes(o.periodo.ate)}, com ${progresso(o)}.`}
+                </p>
+              </article>
+            ))}
+
+            {pedirObjetivo && (
+              <div class="pedido">
+                <h2 id="titulo-pedido">
+                  {objetivos.length === 0 ? 'Qual é o Objetivo desta Trilha?' : 'Qual é o próximo Objetivo?'}
+                </h2>
+                <p class="suave">Uma meta de horas num período. Cada Sessão avança a barra.</p>
+                <form method="post" class="definir" aria-labelledby="titulo-pedido">
+                  <input type="hidden" name="acao" value="definir-objetivo" />
+                  <input type="hidden" name="trilha" value={atual.id} />
+                  <div class="campo campo-horas">
+                    <label for="horas">Horas</label>
+                    <input
+                      id="horas"
+                      name="horas"
+                      type="number"
+                      inputmode="decimal"
+                      min="0.5"
+                      step="0.5"
+                      placeholder="10"
+                      value={valorEnviado('horas')}
+                      required
+                    />
+                  </div>
+                  <div class="campo campo-periodo">
+                    <label for="periodo">Período</label>
+                    <select id="periodo" name="periodo">
+                      <option value="mes" selected={periodoEnviado === 'mes'}>
+                        neste mês ({nomeDoMes(hoje)})
+                      </option>
+                      <option value="semana" selected={periodoEnviado === 'semana'}>
+                        nesta semana ({descreverPeriodo(semana).replace(/^de /, '')})
+                      </option>
+                      <option value="datas" selected={periodoEnviado === 'datas'}>
+                        em outras datas
+                      </option>
+                    </select>
+                  </div>
+                  <fieldset class="datas">
+                    <legend class="visualmente-oculto">Datas do período</legend>
+                    <div class="campo">
+                      <label for="de">De</label>
+                      <input id="de" name="de" type="date" value={valorEnviado('de', hoje)} />
+                    </div>
+                    <div class="campo">
+                      <label for="ate">Até</label>
+                      <input id="ate" name="ate" type="date" min={hoje} value={valorEnviado('ate')} />
+                    </div>
+                  </fieldset>
+                  <button type="submit">Definir Objetivo</button>
+                </form>
+                {erroObjetivo && <p class="erro" role="alert">{erroObjetivo}</p>}
+              </div>
+            )}
           </section>
 
           <section class="timer" aria-label="Timer">
@@ -379,6 +524,96 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
 
   .timer {
     gap: 0.75rem;
+  }
+
+  .objetivos {
+    gap: 2rem;
+  }
+
+  .objetivo {
+    display: grid;
+    gap: 0.625rem;
+  }
+
+  .objetivo-cabeca {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+  }
+
+  .objetivo h2 {
+    text-wrap: balance;
+  }
+
+  .placar {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .objetivo[data-situacao='encerrado'] h2,
+  .objetivo[data-situacao='encerrado'] .placar {
+    color: var(--texto-suave);
+  }
+
+  .pedido {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .pedido h2 {
+    font-size: 1.25rem;
+  }
+
+  .definir {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.75rem 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  /* Mesma altura dos campos ao lado, para alinhar na base e no topo. */
+  .definir button {
+    padding-block: 0.6875rem;
+  }
+
+  .campo {
+    display: grid;
+    gap: 0.375rem;
+  }
+
+  .campo label {
+    font-size: 0.8125rem;
+    color: var(--texto-suave);
+  }
+
+  .campo-horas {
+    width: 6.5rem;
+  }
+
+  .campo-periodo {
+    flex: 1 1 14rem;
+  }
+
+  /* As datas só aparecem quando o período é escolhido à mão (sem JS). */
+  .datas {
+    display: none;
+    flex-basis: 100%;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .definir:has(option[value='datas']:checked) .datas {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .datas .campo {
+    flex: 1 1 10rem;
   }
 
   .cronometro-parado {

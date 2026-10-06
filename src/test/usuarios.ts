@@ -30,5 +30,11 @@ export function relogioFixo(inicio: string) {
   relogio.avancar = (ms: number) => {
     agora = new Date(agora.getTime() + ms);
   };
+  // O tempo só anda para a frente, como no relógio de verdade.
+  relogio.avancarAte = (instante: string) => {
+    const alvo = new Date(instante);
+    if (alvo < agora) throw new Error(`O relógio não volta: ${instante} é antes de agora.`);
+    agora = alvo;
+  };
   return relogio;
 }

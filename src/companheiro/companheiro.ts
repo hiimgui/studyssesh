@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { dataDe, ehData, meiaNoite, mesDe, semanaDe, somarDias, type Data } from './fuso';
 
 // Quem está agindo: o próprio usuário (app) ou o Claude (conector MCP).
 export type Ator = 'usuario' | 'claude';
@@ -30,6 +31,33 @@ export interface TimerLigado {
   ultimaInteracaoEm: Date;
   // Tempo estudado até agora, já sem as pausas.
   estudadoMs: number;
+}
+
+// Como o Objetivo está: batido, ainda correndo, ou com o período acabado sem
+// bater a meta.
+export type SituacaoObjetivo = 'em-andamento' | 'concluido' | 'encerrado';
+
+// Objetivo mensurável: horas de estudo num período, com o progresso calculado
+// pelas Sessões que começaram dentro dele.
+export interface ObjetivoMensuravel {
+  id: string;
+  trilhaId: string;
+  metaHoras: number;
+  // Primeiro e último dia, inclusive, no fuso America/Sao_Paulo.
+  periodo: { de: Data; ate: Data };
+  criadoEm: Date;
+  concluidoEm: Date | null;
+  estudadoSegundos: number;
+  situacao: SituacaoObjetivo;
+}
+
+// O mês ou a semana (segunda a domingo) de hoje, ou datas escolhidas.
+export type Periodo = 'mes' | 'semana' | { de: Data; ate: Data };
+
+// A Trilha está sem direção e o app pede um Objetivo: nenhum está em andamento
+// (todos batidos ou com o período acabado, ou nenhum criado ainda).
+export function semObjetivoEmAndamento(objetivos: ObjetivoMensuravel[]): boolean {
+  return !objetivos.some((o) => o.situacao === 'em-andamento');
 }
 
 // O Ator não tem permissão para a operação (ex.: o Claude criando Trilha).
@@ -139,6 +167,21 @@ const paraSessao = (linha: LinhaSessao): Sessao => ({
   nota: linha.nota,
 });
 
+interface LinhaObjetivo {
+  id: string;
+  trilha_id: string;
+  meta_segundos: number;
+  periodo_inicio: string;
+  periodo_fim: string;
+  criado_em: string;
+  concluido_em: string | null;
+}
+
+const COLUNAS_OBJETIVO =
+  'id, trilha_id, meta_segundos, periodo_inicio, periodo_fim, criado_em, concluido_em';
+
+const HORA_S = 3600;
+
 export function criarCompanheiro({ supabase, relogio = () => new Date() }: Dependencias) {
   // Lê o timer já com a Inatividade aplicada, sem gravar nada (serve a qualquer Ator).
   async function buscarTimer(): Promise<LinhaTimer | null> {
@@ -177,6 +220,72 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       if (erroPausa) throw erroPausa;
     }
     return timer;
+  }
+
+  async function objetivosDaTrilha(trilhaId: string): Promise<ObjetivoMensuravel[]> {
+    const { data, error } = await supabase
+      .from('objetivos')
+      .select(COLUNAS_OBJETIVO)
+      .eq('trilha_id', trilhaId)
+      .order('criado_em')
+      .overrideTypes<LinhaObjetivo[], { merge: false }>();
+    if (error) throw error;
+    return Promise.all(data.map(paraObjetivo));
+  }
+
+  async function estudadoNoPeriodo(
+    objetivo: Pick<LinhaObjetivo, 'trilha_id' | 'periodo_inicio' | 'periodo_fim'>,
+  ): Promise<number> {
+    const { data, error } = await supabase
+      .from('sessoes')
+      .select('duracao_segundos')
+      .eq('trilha_id', objetivo.trilha_id)
+      .gte('inicio', objetivo.periodo_inicio)
+      .lt('inicio', objetivo.periodo_fim);
+    if (error) throw error;
+    return data.reduce((soma, s) => soma + s.duracao_segundos, 0);
+  }
+
+  async function paraObjetivo(linha: LinhaObjetivo): Promise<ObjetivoMensuravel> {
+    const fim = new Date(linha.periodo_fim);
+    const concluidoEm = linha.concluido_em ? new Date(linha.concluido_em) : null;
+    return {
+      id: linha.id,
+      trilhaId: linha.trilha_id,
+      metaHoras: linha.meta_segundos / HORA_S,
+      periodo: {
+        de: dataDe(new Date(linha.periodo_inicio)),
+        ate: dataDe(new Date(fim.getTime() - 1)),
+      },
+      criadoEm: new Date(linha.criado_em),
+      concluidoEm,
+      estudadoSegundos: await estudadoNoPeriodo(linha),
+      situacao: concluidoEm ? 'concluido' : relogio() >= fim ? 'encerrado' : 'em-andamento',
+    };
+  }
+
+  // Uma Sessão nova pode bater a meta dos Objetivos em andamento cujo período
+  // a contém. O Objetivo se conclui no fim da Sessão que bateu a meta.
+  async function concluirObjetivosBatidos(sessao: Sessao): Promise<void> {
+    const inicio = sessao.inicio.toISOString();
+    const { data, error } = await supabase
+      .from('objetivos')
+      .select(COLUNAS_OBJETIVO)
+      .eq('trilha_id', sessao.trilhaId)
+      .is('concluido_em', null)
+      .lte('periodo_inicio', inicio)
+      .gt('periodo_fim', inicio)
+      .overrideTypes<LinhaObjetivo[], { merge: false }>();
+    if (error) throw error;
+    for (const objetivo of data) {
+      if ((await estudadoNoPeriodo(objetivo)) < objetivo.meta_segundos) continue;
+      const { error: erroConcluir } = await supabase
+        .from('objetivos')
+        .update({ concluido_em: sessao.fim.toISOString() })
+        .eq('id', objetivo.id)
+        .is('concluido_em', null);
+      if (erroConcluir) throw erroConcluir;
+    }
   }
 
   return {
@@ -314,7 +423,9 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       // Outro aparelho encerrou entre a leitura e o encerramento.
       if (erroEncerrar?.code === TIMER_JA_ENCERRADO) throw new SemTimerLigado();
       if (erroEncerrar) throw erroEncerrar;
-      return paraSessao(data);
+      const sessao = paraSessao(data);
+      await concluirObjetivosBatidos(sessao);
+      return sessao;
     },
 
     // Todo Ator lê tudo. Mais recentes primeiro.
@@ -331,6 +442,62 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       const { data, error } = await consulta;
       if (error) throw error;
       return data.map(paraSessao);
+    },
+
+    // O Claude só define Objetivo, a pedido do usuário pelo chat, numa Trilha
+    // sem Objetivo em andamento (ADR 0002).
+    async criarObjetivoMensuravel(
+      ator: Ator,
+      { trilhaId, metaHoras, periodo }: { trilhaId: string; metaHoras: number; periodo: Periodo },
+    ): Promise<ObjetivoMensuravel> {
+      const agora = relogio();
+      const hoje = dataDe(agora);
+      const { de, ate } =
+        periodo === 'mes' ? mesDe(hoje) : periodo === 'semana' ? semanaDe(hoje) : periodo;
+      const metaSegundos = Math.round(metaHoras * HORA_S);
+      if (!Number.isFinite(metaSegundos) || metaSegundos <= 0)
+        throw new EntradaInvalida('Diga quantas horas quer estudar.');
+      if (!ehData(de) || !ehData(ate))
+        throw new EntradaInvalida('Escolha o primeiro e o último dia do período.');
+      if (de > ate) throw new EntradaInvalida('O último dia vem antes do primeiro.');
+      const inicio = meiaNoite(de).toISOString();
+      const fim = meiaNoite(somarDias(ate, 1));
+      if (fim <= agora)
+        throw new EntradaInvalida('Esse período já acabou. Escolha um que vá até hoje ou depois.');
+
+      if (ator === 'claude') {
+        if (!semObjetivoEmAndamento(await objetivosDaTrilha(trilhaId)))
+          throw new PermissaoNegada(ator, 'definir Objetivo numa Trilha que já tem um');
+      }
+
+      const linha = {
+        trilha_id: trilhaId,
+        meta_segundos: metaSegundos,
+        periodo_inicio: inicio,
+        periodo_fim: fim.toISOString(),
+      };
+      // Com a meta já batida no período, o Objetivo nasce concluído.
+      const batido = (await estudadoNoPeriodo(linha)) >= metaSegundos;
+      const { data, error } = await supabase
+        .from('objetivos')
+        .insert({
+          ...linha,
+          tipo: 'mensuravel',
+          criado_em: agora.toISOString(),
+          concluido_em: batido ? agora.toISOString() : null,
+        })
+        .select(COLUNAS_OBJETIVO)
+        .single<LinhaObjetivo>();
+      if (error) throw error;
+      return paraObjetivo(data);
+    },
+
+    // Todo Ator lê tudo. Na ordem em que foram criados.
+    async listarObjetivos(
+      _ator: Ator,
+      { trilhaId }: { trilhaId: string },
+    ): Promise<ObjetivoMensuravel[]> {
+      return objetivosDaTrilha(trilhaId);
     },
   };
 }
