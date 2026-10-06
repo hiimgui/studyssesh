@@ -155,10 +155,14 @@ export interface Inicio {
   totalSegundos: number;
   // Dias distintos com Sessão no mês de hoje, em São Paulo. Só cresce no mês.
   diasEstudadosNoMes: number;
+  // Quando saiu o último Resumo, de qualquer Trilha. Se a routine semanal
+  // falhar, é aqui que se vê (ADR 0002).
+  ultimoResumoEm: Date | null;
   trilhas: {
     trilha: Trilha;
     progresso: ProgressoDaTrilha;
     objetivosEmAndamento: Objetivo[];
+    ultimoResumo: Resumo | null;
   }[];
 }
 
@@ -454,6 +458,18 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     if (error) throw error;
     if (!data) throw new EntradaInvalida('Trilha não encontrada.');
     if (data.arquivada_em) throw new EntradaInvalida('Esta Trilha está arquivada.');
+  }
+
+  async function resumosDaTrilha(trilhaId: string, limite?: number): Promise<Resumo[]> {
+    let consulta = supabase
+      .from('resumos')
+      .select(COLUNAS_RESUMO)
+      .eq('trilha_id', trilhaId)
+      .order('gerado_em', { ascending: false });
+    if (limite !== undefined) consulta = consulta.limit(limite);
+    const { data, error } = await consulta.overrideTypes<LinhaResumo[], { merge: false }>();
+    if (error) throw error;
+    return data.map(paraResumo);
   }
 
   async function objetivosDaTrilha(trilhaId: string): Promise<Objetivo[]> {
@@ -960,15 +976,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       _ator: Ator,
       { trilhaId, limite }: { trilhaId: string; limite?: number },
     ): Promise<Resumo[]> {
-      let consulta = supabase
-        .from('resumos')
-        .select(COLUNAS_RESUMO)
-        .eq('trilha_id', trilhaId)
-        .order('gerado_em', { ascending: false });
-      if (limite !== undefined) consulta = consulta.limit(limite);
-      const { data, error } = await consulta.overrideTypes<LinhaResumo[], { merge: false }>();
-      if (error) throw error;
-      return data.map(paraResumo);
+      return resumosDaTrilha(trilhaId, limite);
     },
 
     // Todo Ator lê tudo. Na ordem em que foram criados.
@@ -986,8 +994,14 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
 
     // Todo Ator lê tudo. As Trilhas vêm como as abas: só as não arquivadas.
     async inicio(_ator: Ator): Promise<Inicio> {
-      const [sessoes, trilhas] = await Promise.all([
+      const [sessoes, ultimoResumo, trilhas] = await Promise.all([
         supabase.from('sessoes').select('trilha_id, inicio, duracao_segundos'),
+        supabase
+          .from('resumos')
+          .select('gerado_em')
+          .order('gerado_em', { ascending: false })
+          .limit(1)
+          .maybeSingle<{ gerado_em: string }>(),
         supabase
           .from('trilhas')
           .select(`${COLUNAS_TRILHA}, marco_celebrado_horas`)
@@ -997,6 +1011,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       ]);
       if (sessoes.error) throw sessoes.error;
       if (trilhas.error) throw trilhas.error;
+      if (ultimoResumo.error) throw ultimoResumo.error;
 
       const mes = mesDe(dataDe(relogio()));
       const diasNoMes = new Set<Data>();
@@ -1012,6 +1027,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       return {
         totalSegundos,
         diasEstudadosNoMes: diasNoMes.size,
+        ultimoResumoEm: ultimoResumo.data ? new Date(ultimoResumo.data.gerado_em) : null,
         trilhas: await Promise.all(
           trilhas.data.map(async (linha) => ({
             trilha: paraTrilha(linha),
@@ -1019,6 +1035,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
             objetivosEmAndamento: (await objetivosDaTrilha(linha.id)).filter(
               (o) => o.situacao === 'em-andamento',
             ),
+            ultimoResumo: (await resumosDaTrilha(linha.id, 1))[0] ?? null,
           })),
         ),
       };

@@ -146,6 +146,37 @@ describe('Resumo semanal', () => {
     }
   });
 
+  it('o Início traz o último Resumo de cada Trilha e quando saiu o último de todos', async () => {
+    const { companheiro, relogio, trilha, objetivo } = await trilhaComObjetivo();
+    relogio.avancar(60_000);
+    const violao = await companheiro.criarTrilha('usuario', { nome: 'Violão' });
+    const resumir = (trilhaId: string, objetivoId: string, semanaDe: string) =>
+      companheiro.criarResumo('claude', {
+        trilhaId,
+        semanaDe,
+        texto: `Semana de ${semanaDe}`,
+        fontes: [{ titulo: 'Guia', url: 'https://example.com' }],
+        recomendacoes: [materialExtra(objetivoId)],
+      });
+
+    expect(await companheiro.inicio('usuario')).toMatchObject({
+      ultimoResumoEm: null,
+      trilhas: [{ ultimoResumo: null }, { ultimoResumo: null }],
+    });
+
+    await resumir(trilha.id, objetivo.id, '2026-09-28');
+    relogio.avancar(60_000);
+    const ultimo = await resumir(trilha.id, objetivo.id, '2026-10-05');
+
+    expect(await companheiro.inicio('usuario')).toMatchObject({
+      ultimoResumoEm: ultimo.geradoEm,
+      trilhas: [
+        { trilha: { id: trilha.id }, ultimoResumo: ultimo },
+        { trilha: { id: violao.id }, ultimoResumo: null },
+      ],
+    });
+  });
+
   it('numa Trilha arquivada não entra Resumo novo', async () => {
     const { companheiro, trilha, objetivo } = await trilhaComObjetivo();
     await companheiro.arquivarTrilha('usuario', { trilhaId: trilha.id });
