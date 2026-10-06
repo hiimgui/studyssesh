@@ -50,7 +50,7 @@ Dentro do Claude Code:
 - **Um único ponto de teste:** a interface do **Companheiro**. Os testes usam Postgres real (Supabase local) e relógio injetado, sem mocks de banco.
 - **Ator `claude`:** lê tudo e cria Resumos e Recomendações. Quando o usuário pede, também cria Sessões, define Objetivo em Trilha vazia e registra Decisões. **Nunca edita nem apaga.** Isso é imposto no Companheiro e coberto por testes.
 - Rotas do Astro e servidor MCP são **adaptadores finos**, sem regra de negócio.
-- Front com a skill "impeccable", minimalista, JetBrains Mono e Bonta, tema seguindo o sistema, sem notificações.
+- Front com a skill "impeccable", minimalista, JetBrains Mono e Unbounded, tema seguindo o sistema, sem notificações.
 - Textos do Claude no app com a skill "humanizer", em PT-BR, com fontes em PT ou EN.
 - Use o vocabulário do `CONTEXT.md` em código, testes e issues. Se algo contradiz um ADR, diga isso explicitamente.
 
