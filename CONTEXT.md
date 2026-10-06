@@ -16,9 +16,9 @@ Uma Sessão com timer ligado e sem interação por 1 hora. O timer pausa sozinho
 **Objetivo**
 Algo que se quer alcançar dentro de uma Trilha. É único, não recorrente. Pode ser:
 - *abstrato*: concluído por julgamento ("conseguir a certificação X");
-- *mensurável*: o progresso é calculado a partir das Sessões ("10 horas de estudo no mês").
+- *mensurável*: o progresso é calculado a partir das Sessões ("10 horas de estudo no mês"). O período é o mês, a semana (segunda a domingo) ou datas escolhidas, sempre no fuso America/Sao_Paulo. Cada Sessão conta inteira no período em que começou. O Objetivo se conclui sozinho no fim da Sessão que bate a meta; se o período acaba antes, ele fica *encerrado*.
 
-Se uma Trilha não tiver nenhum Objetivo, o app pede que um seja definido.
+Se uma Trilha não tiver nenhum Objetivo em andamento (nenhum criado, ou todos concluídos ou encerrados), o app pede que um seja definido.
 
 O progresso aparece sempre como barra. Num Objetivo mensurável, ela mede horas sobre a meta. Num Objetivo abstrato, mede a proporção de itens concluídos ligados a ele (projetos e itens da Biblioteca). Ao concluir um Objetivo, há uma celebração e o usuário escolhe se arquiva a Trilha ou define um novo Objetivo.
 

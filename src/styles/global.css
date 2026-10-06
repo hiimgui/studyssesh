@@ -68,13 +68,17 @@ a {
 }
 
 input,
+select,
 button {
   font: inherit;
   color: inherit;
 }
 
 input[type='text'],
-input[type='email'] {
+input[type='email'],
+input[type='number'],
+input[type='date'],
+select {
   width: 100%;
   padding: 0.625rem 0.75rem;
   background: var(--superficie);
@@ -82,7 +86,37 @@ input[type='email'] {
   border-radius: var(--raio);
 }
 
-input:focus-visible {
+input[type='number'] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Seta própria no lugar da do sistema, na cor do texto suave. */
+select {
+  appearance: none;
+  padding-right: 2.25rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--texto-suave) 50%),
+    linear-gradient(-45deg, transparent 50%, var(--texto-suave) 50%);
+  background-position:
+    right 1.125rem center,
+    right 0.8125rem center;
+  background-size: 0.3125rem 0.3125rem;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}
+
+input:focus-visible,
+select:focus-visible {
   outline-offset: 0;
   border-color: var(--destaque);
 }
