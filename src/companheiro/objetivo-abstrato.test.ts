@@ -131,6 +131,8 @@ describe('Objetivo abstrato', () => {
       descricao: 'Conseguir a certificação',
     });
     await companheiro.concluirObjetivo('usuario', { objetivoId: certificacao.id });
+    // Os Objetivos seguem a ordem de criação; no mesmo instante, ela empataria.
+    relogio.avancar(60_000);
     await companheiro.criarObjetivoMensuravel('usuario', {
       trilhaId: trilha.id,
       metaHoras: 10,
