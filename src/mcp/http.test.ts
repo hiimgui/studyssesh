@@ -1,18 +1,20 @@
 // O /mcp de ponta a ponta, sem o servidor do Astro: requisição HTTP de
-// verdade, token de verdade de um usuário de teste, Postgres de verdade.
+// verdade, token OAuth de verdade (fluxo completo no Supabase local) e
+// Postgres de verdade.
 import { describe, expect, it } from 'vitest';
 import { inject } from 'vitest';
 import { criarCompanheiro } from '../companheiro/companheiro';
+import { tokenDoConector } from '../test/oauth';
 import { novoUsuario } from '../test/usuarios';
-import { atenderMcp } from './http';
+import { atenderMcp, metadadosDoRecurso } from './http';
 
-const config = () => {
+const config = (extra = {}) => {
   const { url, anonKey } = inject('supabase');
-  return { supabaseUrl: url, supabaseAnonKey: anonKey };
+  return { supabaseUrl: url, supabaseAnonKey: anonKey, ...extra };
 };
 
 const chamada = (corpo: unknown, token?: string) =>
-  new Request('http://localhost/mcp', {
+  new Request('https://aibou.test/mcp', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -22,42 +24,45 @@ const chamada = (corpo: unknown, token?: string) =>
     body: JSON.stringify(corpo),
   });
 
-describe('/mcp', () => {
-  it('sem token, ou com token inválido, responde 401 pedindo Bearer', async () => {
-    const lista = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+const LISTA = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+const INICIALIZAR = {
+  jsonrpc: '2.0',
+  id: 1,
+  method: 'initialize',
+  params: {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'teste', version: '1.0.0' },
+  },
+};
 
+describe('/mcp', () => {
+  it('sem token, ou com token inválido, responde 401 apontando os metadados do recurso', async () => {
     for (const token of [undefined, 'nao-e-um-token']) {
-      const resposta = await atenderMcp(chamada(lista, token), config());
+      const resposta = await atenderMcp(chamada(LISTA, token), config());
       expect(resposta.status).toBe(401);
-      expect(resposta.headers.get('WWW-Authenticate')).toMatch(/^Bearer/);
+      expect(resposta.headers.get('WWW-Authenticate')).toBe(
+        'Bearer resource_metadata="https://aibou.test/.well-known/oauth-protected-resource/mcp"',
+      );
     }
   });
 
-  it('com o token do usuário, a ferramenta chega ao Companheiro dele', async () => {
+  it('o token da sessão do app não serve: só o emitido para o conector, pelo OAuth', async () => {
     const supabase = await novoUsuario();
     const { data } = await supabase.auth.getSession();
-    const token = data.session!.access_token;
+
+    const resposta = await atenderMcp(chamada(LISTA, data.session!.access_token), config());
+
+    expect(resposta.status).toBe(401);
+  });
+
+  it('com o token do conector, a ferramenta chega ao Companheiro do usuário', async () => {
+    const supabase = await novoUsuario();
+    const token = await tokenDoConector(supabase);
     const companheiro = criarCompanheiro({ supabase });
     const trilha = await companheiro.criarTrilha('usuario', { nome: 'MCP' });
 
-    const inicio = await atenderMcp(
-      chamada(
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: '2025-06-18',
-            capabilities: {},
-            clientInfo: { name: 'teste', version: '1.0.0' },
-          },
-        },
-        token,
-      ),
-      config(),
-    );
-    expect(inicio.status).toBe(200);
-
+    expect((await atenderMcp(chamada(INICIALIZAR, token), config())).status).toBe(200);
     const registro = await atenderMcp(
       chamada(
         {
@@ -82,5 +87,30 @@ describe('/mcp', () => {
     expect(await companheiro.listarSessoes('usuario', { trilhaId: trilha.id })).toMatchObject([
       { duracaoSegundos: 25 * 60, nota: 'Transporte HTTP do MCP', origem: 'chat' },
     ]);
+  });
+
+  it('um token de e-mail fora da lista de acesso é recusado', async () => {
+    const token = await tokenDoConector(await novoUsuario());
+
+    const resposta = await atenderMcp(
+      chamada(LISTA, token),
+      config({ emailPermitido: () => false }),
+    );
+
+    expect(resposta.status).toBe(401);
+  });
+
+  it('os metadados do recurso (RFC 9728) apontam o servidor OAuth do Supabase', async () => {
+    const resposta = metadadosDoRecurso(
+      new Request('https://aibou.test/.well-known/oauth-protected-resource/mcp'),
+      config(),
+    );
+
+    expect(await resposta.json()).toEqual({
+      resource: 'https://aibou.test/mcp',
+      authorization_servers: [`${inject('supabase').url}/auth/v1`],
+      bearer_methods_supported: ['header'],
+      resource_name: 'Aibou',
+    });
   });
 });

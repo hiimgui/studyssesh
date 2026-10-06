@@ -1,0 +1,160 @@
+---
+import Base from '../../layouts/Base.astro';
+
+// Consentimento do conector MCP (servidor OAuth 2.1 do Supabase). O Supabase
+// manda para cá com ?authorization_id; a pessoa já está logada (o middleware
+// garante) e decide se o cliente (o Claude) pode usar o Aibou por ela.
+const autorizacaoId = Astro.url.searchParams.get('authorization_id') ?? '';
+const oauth = Astro.locals.supabase.auth.oauth;
+
+if (Astro.request.method === 'POST' && autorizacaoId) {
+  const decisao = String((await Astro.request.formData()).get('decisao') ?? '');
+  // O Supabase liga o pedido à pessoa logada ao ler os detalhes; sem isso,
+  // aprovar ou recusar falha.
+  await oauth.getAuthorizationDetails(autorizacaoId);
+  const resposta =
+    decisao === 'permitir'
+      ? await oauth.approveAuthorization(autorizacaoId, { skipBrowserRedirect: true })
+      : await oauth.denyAuthorization(autorizacaoId, { skipBrowserRedirect: true });
+  if (!resposta.error) return Astro.redirect(resposta.data.redirect_url, 303);
+}
+
+const { data: detalhes, error } = autorizacaoId
+  ? await oauth.getAuthorizationDetails(autorizacaoId)
+  : { data: null, error: true };
+// Já autorizado antes: o Supabase devolve direto para onde voltar.
+const pedido = !error && detalhes && 'authorization_id' in detalhes ? detalhes : null;
+if (!error && detalhes && !pedido && 'redirect_url' in detalhes) {
+  return Astro.redirect(detalhes.redirect_url, 303);
+}
+const cliente = pedido?.client.name || 'Um aplicativo';
+const destino = pedido ? new URL(pedido.redirect_uri).host : '';
+---
+
+<Base titulo="Conectar ao Aibou">
+  <main>
+    <p class="marca">Aibou</p>
+    {
+      pedido ? (
+        <>
+          <div class="cabeca">
+            <h1>Conectar {cliente}?</h1>
+            <p class="suave">
+              {cliente} quer usar o seu Aibou como <strong>{pedido.user.email}</strong>.
+            </p>
+          </div>
+
+          <div class="permissoes">
+            <section aria-labelledby="pode">
+              <h2 id="pode">Vai poder</h2>
+              <ul>
+                <li>Ler suas Trilhas, Sessões, Objetivos, Marcos e dias estudados.</li>
+                <li>Registrar Sessões de estudo, com nota, quando você contar no chat.</li>
+              </ul>
+            </section>
+            <section aria-labelledby="nao-pode">
+              <h2 id="nao-pode">Não vai poder</h2>
+              <ul>
+                <li>Editar ou apagar nada do que já existe.</li>
+                <li>Criar Trilhas, mexer no timer ou concluir Objetivos.</li>
+              </ul>
+            </section>
+          </div>
+
+          <form method="post" class="decisao">
+            <button type="submit" name="decisao" value="permitir">
+              Permitir
+            </button>
+            <button class="botao-secundario" type="submit" name="decisao" value="recusar">
+              Recusar
+            </button>
+          </form>
+          <p class="suave rodape">Depois, você volta para {destino}.</p>
+        </>
+      ) : (
+        <div class="cabeca">
+          <h1>Este pedido não vale mais</h1>
+          <p class="suave">
+            O link de conexão expirou ou já foi usado. Volte ao Claude e peça para conectar de
+            novo.
+          </p>
+        </div>
+      )
+    }
+  </main>
+</Base>
+
+<style>
+  main {
+    display: grid;
+    gap: 2rem;
+    align-content: center;
+    width: min(100% - 2 * var(--espaco), 28rem);
+    min-height: 100dvh;
+    margin-inline: auto;
+    padding-block: 3rem;
+  }
+
+  .marca {
+    font-family: var(--fonte-titulo);
+    font-size: 1.25rem;
+  }
+
+  .cabeca {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 7vw, 2.75rem);
+    text-wrap: balance;
+  }
+
+  strong {
+    color: var(--texto);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .permissoes {
+    display: grid;
+    gap: 1.25rem;
+    padding-block: 1.25rem;
+    border-block: 1px solid var(--linha);
+  }
+
+  .permissoes section {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  h2 {
+    font-family: var(--fonte-corpo);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--texto-suave);
+    letter-spacing: 0;
+  }
+
+  ul {
+    display: grid;
+    gap: 0.375rem;
+    margin: 0;
+    padding-left: 1.125rem;
+  }
+
+  li::marker {
+    color: var(--texto-suave);
+  }
+
+  .decisao {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .rodape {
+    margin-top: -1rem;
+    font-size: 0.8125rem;
+  }
+</style>
