@@ -10,6 +10,8 @@ export interface Trilha {
   id: string;
   nome: string;
   criadaEm: Date;
+  // Arquivada, a Trilha sai das abas e fica só para consulta.
+  arquivadaEm: Date | null;
 }
 
 export interface Sessao {
@@ -41,6 +43,7 @@ export type SituacaoObjetivo = 'em-andamento' | 'concluido' | 'encerrado';
 // pelas Sessões que começaram dentro dele.
 export interface ObjetivoMensuravel {
   id: string;
+  tipo: 'mensuravel';
   trilhaId: string;
   metaHoras: number;
   // Primeiro e último dia, inclusive, no fuso America/Sao_Paulo.
@@ -51,13 +54,48 @@ export interface ObjetivoMensuravel {
   situacao: SituacaoObjetivo;
 }
 
+// Objetivo abstrato: concluído por julgamento do usuário. A barra mede os itens
+// ligados a ele que já foram concluídos (projetos e itens da Biblioteca).
+export interface ObjetivoAbstrato {
+  id: string;
+  tipo: 'abstrato';
+  trilhaId: string;
+  descricao: string;
+  criadoEm: Date;
+  concluidoEm: Date | null;
+  itens: { concluidos: number; total: number };
+  // Sem período, não há como ficar encerrado.
+  situacao: Exclude<SituacaoObjetivo, 'encerrado'>;
+}
+
+export type Objetivo = ObjetivoMensuravel | ObjetivoAbstrato;
+
 // O mês ou a semana (segunda a domingo) de hoje, ou datas escolhidas.
 export type Periodo = 'mes' | 'semana' | { de: Data; ate: Data };
 
 // A Trilha está sem direção e o app pede um Objetivo: nenhum está em andamento
 // (todos batidos ou com o período acabado, ou nenhum criado ainda).
-export function semObjetivoEmAndamento(objetivos: ObjetivoMensuravel[]): boolean {
+export function semObjetivoEmAndamento(objetivos: Objetivo[]): boolean {
   return !objetivos.some((o) => o.situacao === 'em-andamento');
+}
+
+// Quando um Objetivo acabou: na conclusão, ou na meia-noite depois do último
+// dia do período, se ficou encerrado.
+function acabouEm(objetivo: Objetivo): Date {
+  if (objetivo.tipo === 'mensuravel' && !objetivo.concluidoEm)
+    return meiaNoite(somarDias(objetivo.periodo.ate, 1));
+  // Só chega aqui sem conclusão um abstrato em andamento, que não acabou.
+  return objetivo.concluidoEm ?? objetivo.criadoEm;
+}
+
+// Ao concluir um Objetivo há celebração, e o usuário escolhe entre arquivar a
+// Trilha ou definir um novo Objetivo. A escolha é o que encerra a celebração:
+// ela vale enquanto nada estiver em andamento e o último Objetivo a acabar for
+// um concluído (não um encerrado sem bater a meta).
+export function objetivoParaCelebrar(objetivos: Objetivo[]): Objetivo | null {
+  if (!semObjetivoEmAndamento(objetivos) || objetivos.length === 0) return null;
+  const ultimo = objetivos.reduce((a, b) => (acabouEm(b) >= acabouEm(a) ? b : a));
+  return ultimo.situacao === 'concluido' ? ultimo : null;
 }
 
 // O Ator não tem permissão para a operação (ex.: o Claude criando Trilha).
@@ -106,12 +144,16 @@ interface LinhaTrilha {
   id: string;
   nome: string;
   criada_em: string;
+  arquivada_em: string | null;
 }
+
+const COLUNAS_TRILHA = 'id, nome, criada_em, arquivada_em';
 
 const paraTrilha = (linha: LinhaTrilha): Trilha => ({
   id: linha.id,
   nome: linha.nome,
   criadaEm: new Date(linha.criada_em),
+  arquivadaEm: linha.arquivada_em ? new Date(linha.arquivada_em) : null,
 });
 
 interface LinhaTimer {
@@ -167,18 +209,46 @@ const paraSessao = (linha: LinhaSessao): Sessao => ({
   nota: linha.nota,
 });
 
-interface LinhaObjetivo {
+interface LinhaMensuravel {
   id: string;
+  tipo: 'mensuravel';
   trilha_id: string;
   meta_segundos: number;
   periodo_inicio: string;
   periodo_fim: string;
+  descricao: null;
   criado_em: string;
   concluido_em: string | null;
 }
 
+interface LinhaAbstrato {
+  id: string;
+  tipo: 'abstrato';
+  trilha_id: string;
+  meta_segundos: null;
+  periodo_inicio: null;
+  periodo_fim: null;
+  descricao: string;
+  criado_em: string;
+  concluido_em: string | null;
+}
+
+type LinhaObjetivo = LinhaMensuravel | LinhaAbstrato;
+
 const COLUNAS_OBJETIVO =
-  'id, trilha_id, meta_segundos, periodo_inicio, periodo_fim, criado_em, concluido_em';
+  'id, tipo, trilha_id, meta_segundos, periodo_inicio, periodo_fim, descricao, criado_em, concluido_em';
+
+const paraAbstrato = (linha: LinhaAbstrato): ObjetivoAbstrato => ({
+  id: linha.id,
+  tipo: 'abstrato',
+  trilhaId: linha.trilha_id,
+  descricao: linha.descricao,
+  criadoEm: new Date(linha.criado_em),
+  concluidoEm: linha.concluido_em ? new Date(linha.concluido_em) : null,
+  // Projetos e itens da Biblioteca ainda não existem (#11): nada ligado.
+  itens: { concluidos: 0, total: 0 },
+  situacao: linha.concluido_em ? 'concluido' : 'em-andamento',
+});
 
 const HORA_S = 3600;
 
@@ -222,7 +292,19 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     return timer;
   }
 
-  async function objetivosDaTrilha(trilhaId: string): Promise<ObjetivoMensuravel[]> {
+  // Trilha arquivada é só consulta: não recebe timer nem Objetivo novo.
+  async function garantirTrilhaAtiva(trilhaId: string): Promise<void> {
+    const { data, error } = await supabase
+      .from('trilhas')
+      .select('arquivada_em')
+      .eq('id', trilhaId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new EntradaInvalida('Trilha não encontrada.');
+    if (data.arquivada_em) throw new EntradaInvalida('Esta Trilha está arquivada.');
+  }
+
+  async function objetivosDaTrilha(trilhaId: string): Promise<Objetivo[]> {
     const { data, error } = await supabase
       .from('objetivos')
       .select(COLUNAS_OBJETIVO)
@@ -233,8 +315,12 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     return Promise.all(data.map(paraObjetivo));
   }
 
+  function paraObjetivo(linha: LinhaObjetivo): Promise<Objetivo> | Objetivo {
+    return linha.tipo === 'abstrato' ? paraAbstrato(linha) : paraMensuravel(linha);
+  }
+
   async function estudadoNoPeriodo(
-    objetivo: Pick<LinhaObjetivo, 'trilha_id' | 'periodo_inicio' | 'periodo_fim'>,
+    objetivo: Pick<LinhaMensuravel, 'trilha_id' | 'periodo_inicio' | 'periodo_fim'>,
   ): Promise<number> {
     const { data, error } = await supabase
       .from('sessoes')
@@ -246,11 +332,12 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     return data.reduce((soma, s) => soma + s.duracao_segundos, 0);
   }
 
-  async function paraObjetivo(linha: LinhaObjetivo): Promise<ObjetivoMensuravel> {
+  async function paraMensuravel(linha: LinhaMensuravel): Promise<ObjetivoMensuravel> {
     const fim = new Date(linha.periodo_fim);
     const concluidoEm = linha.concluido_em ? new Date(linha.concluido_em) : null;
     return {
       id: linha.id,
+      tipo: 'mensuravel',
       trilhaId: linha.trilha_id,
       metaHoras: linha.meta_segundos / HORA_S,
       periodo: {
@@ -275,7 +362,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       .is('concluido_em', null)
       .lte('periodo_inicio', inicio)
       .gt('periodo_fim', inicio)
-      .overrideTypes<LinhaObjetivo[], { merge: false }>();
+      .overrideTypes<LinhaMensuravel[], { merge: false }>();
     if (error) throw error;
     for (const objetivo of data) {
       if ((await estudadoNoPeriodo(objetivo)) < objetivo.meta_segundos) continue;
@@ -297,20 +384,49 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       const { data, error } = await supabase
         .from('trilhas')
         .insert({ nome, criada_em: relogio().toISOString() })
-        .select('id, nome, criada_em')
-        .single();
+        .select(COLUNAS_TRILHA)
+        .single<LinhaTrilha>();
       if (error) throw error;
       return paraTrilha(data);
     },
 
-    // Todo Ator lê tudo.
+    // Todo Ator lê tudo. As abas: só as Trilhas não arquivadas.
     async listarTrilhas(_ator: Ator): Promise<Trilha[]> {
       const { data, error } = await supabase
         .from('trilhas')
-        .select('id, nome, criada_em')
-        .order('criada_em');
+        .select(COLUNAS_TRILHA)
+        .is('arquivada_em', null)
+        .order('criada_em')
+        .overrideTypes<LinhaTrilha[], { merge: false }>();
       if (error) throw error;
       return data.map(paraTrilha);
+    },
+
+    // As arquivadas, das mais recentes para as mais antigas.
+    async listarTrilhasArquivadas(_ator: Ator): Promise<Trilha[]> {
+      const { data, error } = await supabase
+        .from('trilhas')
+        .select(COLUNAS_TRILHA)
+        .not('arquivada_em', 'is', null)
+        .order('arquivada_em', { ascending: false })
+        .overrideTypes<LinhaTrilha[], { merge: false }>();
+      if (error) throw error;
+      return data.map(paraTrilha);
+    },
+
+    // Arquivar é escolha do usuário (em geral depois de concluir um Objetivo).
+    // Arquivar de novo não muda a data.
+    async arquivarTrilha(ator: Ator, { trilhaId }: { trilhaId: string }): Promise<void> {
+      if (ator !== 'usuario') throw new PermissaoNegada(ator, 'arquivar Trilha');
+      const timer = await buscarTimer();
+      if (timer?.trilha_id === trilhaId)
+        throw new EntradaInvalida('Encerre o timer desta Trilha antes de arquivá-la.');
+      const { error } = await supabase
+        .from('trilhas')
+        .update({ arquivada_em: relogio().toISOString() })
+        .eq('id', trilhaId)
+        .is('arquivada_em', null);
+      if (error) throw error;
     },
 
     async timerLigado(_ator: Ator): Promise<TimerLigado | null> {
@@ -365,6 +481,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
     // O timer é só do usuário. O Claude registra estudo de outro jeito (pelo chat).
     async iniciarTimer(ator: Ator, { trilhaId }: { trilhaId: string }): Promise<void> {
       if (ator !== 'usuario') throw new PermissaoNegada(ator, 'ligar o timer');
+      await garantirTrilhaAtiva(trilhaId);
       const agora = relogio().toISOString();
       const { error } = await supabase
         .from('timers')
@@ -464,6 +581,7 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       const fim = meiaNoite(somarDias(ate, 1));
       if (fim <= agora)
         throw new EntradaInvalida('Esse período já acabou. Escolha um que vá até hoje ou depois.');
+      await garantirTrilhaAtiva(trilhaId);
 
       if (ator === 'claude') {
         if (!semObjetivoEmAndamento(await objetivosDaTrilha(trilhaId)))
@@ -487,16 +605,70 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
           concluido_em: batido ? agora.toISOString() : null,
         })
         .select(COLUNAS_OBJETIVO)
-        .single<LinhaObjetivo>();
+        .single<LinhaMensuravel>();
       if (error) throw error;
-      return paraObjetivo(data);
+      return paraMensuravel(data);
+    },
+
+    // Mesma regra do mensurável para o Claude: só numa Trilha sem Objetivo em andamento.
+    async criarObjetivoAbstrato(
+      ator: Ator,
+      { trilhaId, descricao }: { trilhaId: string; descricao: string },
+    ): Promise<ObjetivoAbstrato> {
+      descricao = descricao.trim();
+      if (!descricao) throw new EntradaInvalida('Diga o que você quer alcançar.');
+      await garantirTrilhaAtiva(trilhaId);
+      if (ator === 'claude') {
+        if (!semObjetivoEmAndamento(await objetivosDaTrilha(trilhaId)))
+          throw new PermissaoNegada(ator, 'definir Objetivo numa Trilha que já tem um');
+      }
+      const { data, error } = await supabase
+        .from('objetivos')
+        .insert({
+          trilha_id: trilhaId,
+          tipo: 'abstrato',
+          descricao,
+          criado_em: relogio().toISOString(),
+        })
+        .select(COLUNAS_OBJETIVO)
+        .single<LinhaAbstrato>();
+      if (error) throw error;
+      return paraAbstrato(data);
+    },
+
+    // Concluir é julgamento do usuário, por isso só vale para o abstrato. Concluir
+    // de novo não muda a data (o mesmo clique pode chegar duas vezes).
+    async concluirObjetivo(
+      ator: Ator,
+      { objetivoId }: { objetivoId: string },
+    ): Promise<ObjetivoAbstrato> {
+      if (ator !== 'usuario') throw new PermissaoNegada(ator, 'concluir Objetivo');
+      const buscar = async () => {
+        const { data, error } = await supabase
+          .from('objetivos')
+          .select(COLUNAS_OBJETIVO)
+          .eq('id', objetivoId)
+          .maybeSingle<LinhaObjetivo>();
+        if (error) throw error;
+        if (!data) throw new EntradaInvalida('Objetivo não encontrado.');
+        if (data.tipo !== 'abstrato')
+          throw new EntradaInvalida('Um Objetivo mensurável se conclui sozinho, ao bater a meta.');
+        return data;
+      };
+
+      const antes = await buscar();
+      if (antes.concluido_em) return paraAbstrato(antes);
+      const { error } = await supabase
+        .from('objetivos')
+        .update({ concluido_em: relogio().toISOString() })
+        .eq('id', objetivoId)
+        .is('concluido_em', null);
+      if (error) throw error;
+      return paraAbstrato(await buscar());
     },
 
     // Todo Ator lê tudo. Na ordem em que foram criados.
-    async listarObjetivos(
-      _ator: Ator,
-      { trilhaId }: { trilhaId: string },
-    ): Promise<ObjetivoMensuravel[]> {
+    async listarObjetivos(_ator: Ator, { trilhaId }: { trilhaId: string }): Promise<Objetivo[]> {
       return objetivosDaTrilha(trilhaId);
     },
   };

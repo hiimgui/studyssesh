@@ -1,0 +1,100 @@
+---
+import Base from '../layouts/Base.astro';
+import { criarCompanheiro } from '../companheiro/companheiro';
+import { FUSO } from '../lib/hora';
+
+const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
+const arquivadas = await companheiro.listarTrilhasArquivadas('usuario');
+
+const dataLonga = (d: Date) => d.toLocaleDateString('pt-BR', { dateStyle: 'long', timeZone: FUSO });
+---
+
+<Base titulo="Arquivadas">
+  <header>
+    <a class="marca" href="/">Aibou</a>
+  </header>
+
+  <main>
+    <h1>Arquivadas</h1>
+    {
+      arquivadas.length === 0 ? (
+        <p class="suave">
+          Nenhuma Trilha arquivada. Depois de concluir um Objetivo, você pode guardar a Trilha
+          aqui.
+        </p>
+      ) : (
+        <>
+          <p class="suave">Trilhas guardadas, com Sessões e Objetivos como ficaram.</p>
+          <ul>
+            {arquivadas.map((t) => (
+              <li>
+                <a href={`/?trilha=${t.id}`}>{t.nome}</a>
+                <span class="suave">arquivada em {dataLonga(t.arquivadaEm!)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )
+    }
+  </main>
+</Base>
+
+<style>
+  header,
+  main {
+    width: min(100% - 2 * var(--espaco), 60rem);
+    margin-inline: auto;
+  }
+
+  header {
+    padding-block: 1.25rem;
+  }
+
+  .marca {
+    font-family: var(--fonte-titulo);
+    font-size: 1.25rem;
+    text-decoration: none;
+  }
+
+  main {
+    display: grid;
+    gap: 1rem;
+    padding-block: clamp(2rem, 8vw, 4rem);
+  }
+
+  main > * {
+    max-width: 36rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 6vw, 3rem);
+  }
+
+  ul {
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+    padding-block: 0.875rem;
+    border-top: 1px solid var(--linha);
+  }
+
+  li:last-child {
+    border-bottom: 1px solid var(--linha);
+  }
+
+  li a {
+    text-decoration: none;
+  }
+
+  li a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+</style>

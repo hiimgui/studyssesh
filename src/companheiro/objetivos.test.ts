@@ -241,7 +241,7 @@ describe('Objetivo mensurável: bordas de período em America/Sao_Paulo', () => 
     await companheiro.encerrarTimer('usuario');
 
     const progresso = await companheiro.listarObjetivos('usuario', { trilhaId: trilha.id });
-    expect(progresso.map((o) => [o.id, o.estudadoSegundos])).toEqual([
+    expect(progresso.map((o) => [o.id, o.tipo === 'mensuravel' && o.estudadoSegundos])).toEqual([
       [outubro.id, 20 * 60],
       [novembro.id, 30 * 60],
     ]);
