@@ -21,3 +21,9 @@ O Resumo semanal precisa ler Sessões, Objetivos e Decisões e gravar o resultad
 - O Resumo sai toda segunda às 7h (America/Sao_Paulo) e cobre a semana anterior, de segunda a domingo.
 - Todo texto que o Claude escreve no app passa pela skill "humanizer". Se ela não estiver instalada, deve ser instalada quando os requisitos do projeto estiverem fechados.
 - Precisa ser verificado antes de construir: se a conta Pro permite tarefas agendadas que usam conectores personalizados.
+
+## Atualização (2026-10-06, issue #10)
+
+- Verificado na #2: uma tarefa agendada da conta usou o conector personalizado e gravou dados no app. A decisão se mantém.
+- A tarefa agendada do Resumo é uma **routine do Claude Code**, na conta do usuário, que lê este repositório. Ela roda **segunda às 7:07** (America/Sao_Paulo) e segue `docs/rotinas/resumo-semanal.md`.
+- A skill "humanizer" fica **versionada no repositório** (`.claude/skills/humanizer/`), por decisão do usuário. Por isso a routine, que lê o repo, tem acesso a ela. O "gerar agora" abre o chat do claude.ai, onde a skill só existe se estiver também na conta. O prompt dele pede a revisão do texto de qualquer forma.
