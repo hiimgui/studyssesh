@@ -1,13 +1,163 @@
 ---
-// Placeholder. A interface real será feita com a skill "impeccable".
+import Base from '../layouts/Base.astro';
+import { criarCompanheiro, EntradaInvalida } from '../companheiro/companheiro';
+
+const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
+
+let erro: string | null = null;
+if (Astro.request.method === 'POST') {
+  const nome = String((await Astro.request.formData()).get('nome') ?? '');
+  try {
+    const trilha = await companheiro.criarTrilha('usuario', { nome });
+    return Astro.redirect(`/?trilha=${trilha.id}`, 303);
+  } catch (e) {
+    if (!(e instanceof EntradaInvalida)) throw e;
+    erro = e.message;
+  }
+}
+
+const trilhas = await companheiro.listarTrilhas('usuario');
+const idEscolhido = Astro.url.searchParams.get('trilha');
+const criando = idEscolhido === 'nova' || trilhas.length === 0;
+const atual = criando ? null : (trilhas.find((t) => t.id === idEscolhido) ?? trilhas[0]);
+const dataLonga = (d: Date) =>
+  d.toLocaleDateString('pt-BR', { dateStyle: 'long', timeZone: 'America/Sao_Paulo' });
 ---
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Aibou</title>
-  </head>
-  <body>
-    <h1>Aibou</h1>
-  </body>
-</html>
+
+<Base titulo={atual?.nome}>
+  <header>
+    <span class="marca">Aibou</span>
+    <form method="post" action="/sair">
+      <button class="botao-discreto" type="submit">Sair</button>
+    </form>
+  </header>
+
+  <nav aria-label="Trilhas">
+    <ul>
+      {
+        trilhas.map((t) => (
+          <li>
+            <a href={`/?trilha=${t.id}`} aria-current={t.id === atual?.id ? 'page' : undefined}>
+              {t.nome}
+            </a>
+          </li>
+        ))
+      }
+      <li>
+        <a href="/?trilha=nova" aria-current={criando ? 'page' : undefined}>
+          <span aria-hidden="true">+</span> Nova Trilha
+        </a>
+      </li>
+    </ul>
+  </nav>
+
+  <main>
+    {
+      atual ? (
+        <section>
+          <h1>{atual.nome}</h1>
+          <p class="suave">Trilha criada em {dataLonga(atual.criadaEm)}.</p>
+        </section>
+      ) : (
+        <section>
+          <h1>{trilhas.length === 0 ? 'O que você vai estudar?' : 'Nova Trilha'}</h1>
+          <p class="suave">Cada assunto vira uma Trilha, com aba própria.</p>
+          <form method="post" class="nova-trilha">
+            <label class="visualmente-oculto" for="nome">Nome da Trilha</label>
+            <input
+              id="nome"
+              name="nome"
+              type="text"
+              placeholder="Ex.: Claude Certified Architect"
+              maxlength="80"
+              required
+              autofocus
+            />
+            <button type="submit">Criar Trilha</button>
+          </form>
+          {erro && <p class="erro" role="alert">{erro}</p>}
+        </section>
+      )
+    }
+  </main>
+</Base>
+
+<style>
+  header,
+  nav,
+  main {
+    width: min(100% - 2 * var(--espaco), 60rem);
+    margin-inline: auto;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-block: 1.25rem;
+  }
+
+  .marca {
+    font-family: var(--fonte-titulo);
+    font-size: 1.25rem;
+  }
+
+  nav {
+    border-bottom: 1px solid var(--linha);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  nav ul {
+    display: flex;
+    gap: 1.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  nav a {
+    display: block;
+    padding-block: 0.75rem;
+    margin-bottom: -1px;
+    color: var(--texto-suave);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+  }
+
+  nav a:hover {
+    color: var(--texto);
+  }
+
+  nav a[aria-current='page'] {
+    color: var(--texto);
+    border-bottom-color: var(--destaque);
+  }
+
+  main {
+    padding-block: clamp(2rem, 8vw, 4rem);
+  }
+
+  section {
+    display: grid;
+    gap: 1rem;
+    max-width: 36rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 6vw, 3rem);
+  }
+
+  .nova-trilha {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  @media (max-width: 30rem) {
+    .nova-trilha {
+      flex-direction: column;
+    }
+  }
+</style>
