@@ -30,14 +30,32 @@ export function dataDe(instante: Date): Data {
   return relogioDeParede(instante).data;
 }
 
-// O instante da meia-noite que abre a data, em São Paulo.
-export function meiaNoite(data: Data): Date {
+// O instante de uma data e hora "de parede" em São Paulo.
+function instanteDe(data: Data, hora: number, minuto: number): Date {
   const [ano, mes, dia] = data.split('-').map(Number);
-  const palpite = Date.UTC(ano!, mes! - 1, dia!);
+  const palpite = Date.UTC(ano!, mes! - 1, dia!, hora, minuto);
   // Desconta a diferença do fuso naquele momento (-3h hoje, mas a conta não
   // supõe isso, caso o horário de verão volte).
   const desvio = relogioDeParede(new Date(palpite)).comoUtc - palpite;
   return new Date(palpite - desvio);
+}
+
+// O instante da meia-noite que abre a data, em São Paulo.
+export function meiaNoite(data: Data): Date {
+  return instanteDe(data, 0, 0);
+}
+
+// "HH:MM" de São Paulo, no dia mais recente em que esse horário já passou em
+// relação a `agora`. Serve para a pergunta "até quando você estudou?".
+export function horarioMaisRecente(hhmm: string, agora: Date): Date | null {
+  const casamento = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!casamento) return null;
+  const [hora, minuto] = [Number(casamento[1]), Number(casamento[2])];
+  if (hora > 23 || minuto > 59) return null;
+
+  const hoje = dataDe(agora);
+  const instante = instanteDe(hoje, hora, minuto);
+  return instante > agora ? instanteDe(somarDias(hoje, -1), hora, minuto) : instante;
 }
 
 // Soma dias a uma data de calendário.

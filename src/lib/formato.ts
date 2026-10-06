@@ -1,6 +1,5 @@
-import { meiaNoite, mesDe, type Data } from '../companheiro/fuso';
+import { FUSO, meiaNoite, mesDe, type Data } from '../companheiro/fuso';
 import type { ObjetivoMensuravel } from '../companheiro/companheiro';
-import { FUSO } from './hora';
 
 // Horas de estudo em texto curto: "45 min", "3h", "4h 30min".
 export const horas = (segundos: number) => {

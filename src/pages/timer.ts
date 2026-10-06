@@ -5,7 +5,7 @@ import {
   SemTimerLigado,
   TimerJaLigado,
 } from '../companheiro/companheiro';
-import { horarioMaisRecente } from '../lib/hora';
+import { horarioMaisRecente } from '../companheiro/fuso';
 
 // Ações do timer vindas dos botões da aba. Depois de qualquer ação, volta para
 // a Trilha: a página sempre mostra o estado que está no servidor.

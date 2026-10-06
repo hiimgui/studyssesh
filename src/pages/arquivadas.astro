@@ -1,7 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import { criarCompanheiro } from '../companheiro/companheiro';
-import { FUSO } from '../lib/hora';
+import { FUSO } from '../companheiro/fuso';
 
 const companheiro = criarCompanheiro({ supabase: Astro.locals.supabase });
 const arquivadas = await companheiro.listarTrilhasArquivadas('usuario');
