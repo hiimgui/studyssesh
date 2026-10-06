@@ -207,6 +207,8 @@ describe('Timer → Sessão', () => {
       trilhaId: trilha.id,
       iniciadoEm: new Date('2026-10-05T12:00:00Z'),
       pausado: false,
+      pausadoPorInatividade: false,
+      ultimaInteracaoEm: new Date('2026-10-05T12:15:00Z'),
       estudadoMs: 17 * MINUTO,
     });
 
