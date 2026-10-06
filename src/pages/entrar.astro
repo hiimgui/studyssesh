@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import { podeEntrar } from '../lib/permissao';
 
 if (Astro.locals.usuario) return Astro.redirect('/');
 
@@ -11,10 +12,14 @@ let erro =
 
 if (Astro.request.method === 'POST') {
   const email = String((await Astro.request.formData()).get('email') ?? '').trim();
-  const { error } = await Astro.locals.supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: new URL('/auth/callback', Astro.url).toString() },
-  });
+  // Fora da lista, nenhum link sai, mas a resposta é a mesma: a página não
+  // revela quem pode entrar.
+  const { error } = podeEntrar(email)
+    ? await Astro.locals.supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: new URL('/auth/callback', Astro.url).toString() },
+      })
+    : { error: null };
   if (error) erro = 'Não deu para enviar o link. Confira o e-mail e tente de novo.';
   else enviadoPara = email;
 }
