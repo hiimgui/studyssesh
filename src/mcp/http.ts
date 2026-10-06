@@ -29,7 +29,10 @@ export async function atenderMcp(request: Request, config: ConfigSupabase): Prom
 
 // Metadados do recurso protegido (RFC 9728): o /mcp é autorizado pelo servidor
 // OAuth 2.1 do Supabase Auth do projeto.
-export function metadadosDoRecurso(request: Request, { supabaseUrl }: ConfigSupabase): Response {
+export function metadadosDoRecurso(
+  request: Request,
+  { supabaseUrl }: Pick<ConfigSupabase, 'supabaseUrl'>,
+): Response {
   return Response.json({
     resource: new URL('/mcp', request.url).toString(),
     authorization_servers: [`${supabaseUrl}/auth/v1`],

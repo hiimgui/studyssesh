@@ -4,13 +4,21 @@
 import { describe, expect, it } from 'vitest';
 import { inject } from 'vitest';
 import { criarCompanheiro } from '../companheiro/companheiro';
+import { emailPermitido } from '../lib/acesso';
 import { tokenDoConector } from '../test/oauth';
 import { novoUsuario } from '../test/usuarios';
 import { atenderMcp, metadadosDoRecurso } from './http';
 
+// A regra de acesso do app (src/lib/acesso.ts): sem lista, aberta fora de
+// produção, como nos testes; com lista, só os e-mails dela.
+const acesso =
+  (lista: string | undefined, producao = false) =>
+  (email: string) =>
+    emailPermitido(email, lista, { producao });
+
 const config = (extra = {}) => {
   const { url, anonKey } = inject('supabase');
-  return { supabaseUrl: url, supabaseAnonKey: anonKey, ...extra };
+  return { supabaseUrl: url, supabaseAnonKey: anonKey, emailPermitido: acesso(undefined), ...extra };
 };
 
 const chamada = (corpo: unknown, token?: string) =>
@@ -94,7 +102,18 @@ describe('/mcp', () => {
 
     const resposta = await atenderMcp(
       chamada(LISTA, token),
-      config({ emailPermitido: () => false }),
+      config({ emailPermitido: acesso('guiproc@gmail.com', true) }),
+    );
+
+    expect(resposta.status).toBe(401);
+  });
+
+  it('em produção sem lista de e-mails, o /mcp fica fechado (fail closed)', async () => {
+    const token = await tokenDoConector(await novoUsuario());
+
+    const resposta = await atenderMcp(
+      chamada(LISTA, token),
+      config({ emailPermitido: acesso(undefined, true) }),
     );
 
     expect(resposta.status).toBe(401);

@@ -3,16 +3,10 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 export interface ConfigSupabase {
   supabaseUrl: string;
   supabaseAnonKey: string;
-  // Quem pode usar o app (acesso restrito). Por padrão, `acessoPermitido`.
-  emailPermitido?: (email: string) => boolean;
-}
-
-// Ponto único da lista de e-mails com acesso, para o /mcp, que não passa pelo
-// middleware do app. A segunda camada (branch acesso-restrito: variável
-// EMAILS_PERMITIDOS e função pura de permissão) liga a função dela aqui.
-// Até lá, quem segura o acesso é o cadastro fechado no painel do Supabase.
-export function acessoPermitido(_email: string): boolean {
-  return true;
+  // Quem pode usar o app (acesso restrito): a mesma regra do middleware, que o
+  // /mcp não atravessa. Obrigatória, sem padrão que deixe passar. No app, é o
+  // `podeEntrar` de src/lib/permissao.ts (lê EMAILS_PERMITIDOS do servidor).
+  emailPermitido: (email: string) => boolean;
 }
 
 // Lê as claims de um JWT já validado pelo Supabase (getUser confere a
@@ -29,7 +23,7 @@ function claimsDe(token: string): Record<string, unknown> {
 // cliente agindo como o dono do token (o RLS restringe tudo a ele), ou null.
 export async function autenticarMcp(
   request: Request,
-  { supabaseUrl, supabaseAnonKey, emailPermitido = acessoPermitido }: ConfigSupabase,
+  { supabaseUrl, supabaseAnonKey, emailPermitido }: ConfigSupabase,
 ): Promise<SupabaseClient | null> {
   const token = /^Bearer (\S+)$/.exec(request.headers.get('Authorization') ?? '')?.[1];
   if (!token) return null;

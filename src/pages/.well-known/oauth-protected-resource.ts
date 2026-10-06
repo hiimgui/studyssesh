@@ -5,5 +5,4 @@ import { metadadosDoRecurso } from '../../mcp/http';
 export const GET: APIRoute = ({ request }) =>
   metadadosDoRecurso(request, {
     supabaseUrl: import.meta.env.PUBLIC_SUPABASE_URL,
-    supabaseAnonKey: import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
   });
