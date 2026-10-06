@@ -85,6 +85,54 @@ describe('Sessão pelo chat', () => {
     ]);
   });
 
+  it('não cruza o timer que ainda está correndo, do início dele até agora', async () => {
+    const { companheiro, relogio, trilha } = await companheiroComTrilha('2026-10-09T20:00:00Z');
+    const violao = await companheiro.criarTrilha('usuario', { nome: 'Violão' });
+    // Timer ligado às 20:00 no Violão e ainda correndo às 21:00.
+    await companheiro.iniciarTimer('usuario', { trilhaId: violao.id });
+    relogio.avancarAte('2026-10-09T21:00:00Z');
+
+    // 19:50 às 20:10 cruza o começo do timer.
+    await expect(
+      companheiro.registrarSessao('claude', {
+        trilhaId: trilha.id,
+        minutos: 20,
+        nota: 'Spec',
+        fim: new Date('2026-10-09T20:10:00Z'),
+      }),
+    ).rejects.toThrow(EntradaInvalida);
+    // 19:30 às 20:00 encosta no começo do timer.
+    await companheiro.registrarSessao('claude', {
+      trilhaId: trilha.id,
+      minutos: 30,
+      nota: 'Spec',
+      fim: new Date('2026-10-09T20:00:00Z'),
+    });
+
+    expect(await companheiro.listarSessoes('usuario', { trilhaId: trilha.id })).toHaveLength(1);
+  });
+
+  it('o timer pausado por Inatividade só ocupa o tempo até a pausa', async () => {
+    const { companheiro, relogio, trilha } = await companheiroComTrilha('2026-10-09T18:00:00Z');
+    const violao = await companheiro.criarTrilha('usuario', { nome: 'Violão' });
+    // Ligado às 18:00 e sem interação: a Inatividade o pausa às 19:00.
+    await companheiro.iniciarTimer('usuario', { trilhaId: violao.id });
+    relogio.avancarAte('2026-10-09T21:00:00Z');
+
+    await expect(
+      companheiro.registrarSessao('claude', {
+        trilhaId: trilha.id,
+        minutos: 30,
+        nota: 'Spec',
+        fim: new Date('2026-10-09T19:10:00Z'),
+      }),
+    ).rejects.toThrow(EntradaInvalida);
+    // Das 20:00 às 21:00 o timer estava parado: não cruza.
+    await companheiro.registrarSessao('claude', { trilhaId: trilha.id, minutos: 60, nota: 'Spec' });
+
+    expect(await companheiro.listarSessoes('usuario', { trilhaId: trilha.id })).toHaveLength(1);
+  });
+
   it('a Sessão do chat bate a meta de um Objetivo como a do timer', async () => {
     const { companheiro, trilha } = await companheiroComTrilha();
     await companheiro.criarObjetivoMensuravel('usuario', {

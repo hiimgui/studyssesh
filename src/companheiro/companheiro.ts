@@ -648,6 +648,15 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
         .gt('fim', inicio.toISOString());
       if (erroSobreposicao) throw erroSobreposicao;
       if (count) throw new EntradaInvalida('Já há estudo registrado nesse horário.');
+      // O timer ligado ainda vai virar Sessão: ele ocupa do início até agora,
+      // ou só até a pausa, se a Inatividade o pausou.
+      const timer = await buscarTimer();
+      if (timer) {
+        const ocupadoAte =
+          timer.pausado_por_inatividade && timer.pausado_em ? new Date(timer.pausado_em) : agora;
+        if (inicio < ocupadoAte && termino > new Date(timer.iniciado_em))
+          throw new EntradaInvalida('O timer está contando estudo nesse horário.');
+      }
 
       const { data, error } = await supabase
         .from('sessoes')
