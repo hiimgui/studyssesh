@@ -13,6 +13,8 @@ npx supabase start          # Postgres local (precisa de Docker)
 npm run dev
 ```
 
+Para o `.env` local, use `API_URL` e `ANON_KEY` de `npx supabase status -o env`. O magic link chega no Mailpit (http://127.0.0.1:54324). Os testes leem as chaves sozinhos, sem `.env`.
+
 | Comando | O que faz |
 | --- | --- |
 | `npm run check` | Typecheck do Astro + TypeScript |
@@ -32,4 +34,5 @@ npm run dev
    - `SUPABASE_ACCESS_TOKEN`: token pessoal (supabase.com/dashboard/account/tokens)
    - `SUPABASE_DB_PASSWORD`: a senha do banco do projeto
    - `SUPABASE_PROJECT_ID`: a referência do projeto (aparece na URL do dashboard)
-3. **Proteção do `main`:** em Settings → Branches, exija que o check `verify` passe antes do merge.
+3. **Auth do Supabase (produção):** em Authentication → URL Configuration, defina o *Site URL* como o domínio da Vercel e adicione `https://<domínio>/auth/callback` em *Redirect URLs*. Sem isso o magic link não volta para o app.
+4. **Proteção do `main`:** em Settings → Branches, exija que o check `verify` passe antes do merge.

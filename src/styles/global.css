@@ -1,0 +1,128 @@
+:root {
+  color-scheme: light dark;
+
+  --fundo: oklch(98.5% 0.004 85);
+  --superficie: oklch(96% 0.006 85);
+  --texto: oklch(24% 0.01 85);
+  --texto-suave: oklch(50% 0.01 85);
+  --linha: oklch(88% 0.008 85);
+  --destaque: oklch(52% 0.13 155);
+  --erro: oklch(52% 0.17 28);
+
+  --fonte-corpo: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  /* Bonta só é servida quando a licença de webfont for confirmada (spec, Further Notes). */
+  --fonte-titulo: 'Bonta', Georgia, 'Times New Roman', serif;
+
+  --espaco: clamp(1rem, 4vw, 2rem);
+  --raio: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: oklch(17% 0.006 85);
+    --superficie: oklch(21% 0.007 85);
+    --texto: oklch(92% 0.006 85);
+    --texto-suave: oklch(68% 0.008 85);
+    --linha: oklch(30% 0.008 85);
+    --destaque: oklch(74% 0.13 155);
+    --erro: oklch(70% 0.15 28);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2 {
+  font-family: var(--fonte-titulo);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--destaque);
+  outline-offset: 2px;
+}
+
+input,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input[type='text'],
+input[type='email'] {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background: var(--superficie);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+}
+
+input:focus-visible {
+  outline-offset: 0;
+  border-color: var(--destaque);
+}
+
+button {
+  padding: 0.625rem 1rem;
+  background: var(--texto);
+  color: var(--fundo);
+  border: 0;
+  border-radius: var(--raio);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover {
+  opacity: 0.88;
+}
+
+.botao-discreto {
+  padding: 0.25rem 0;
+  background: none;
+  color: var(--texto-suave);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.suave {
+  color: var(--texto-suave);
+}
+
+.erro {
+  color: var(--erro);
+}
+
+.visualmente-oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
