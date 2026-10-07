@@ -27,3 +27,9 @@ O Resumo semanal precisa ler Sessões, Objetivos e Decisões e gravar o resultad
 - Verificado na #2: uma tarefa agendada da conta usou o conector personalizado e gravou dados no app. A decisão se mantém.
 - A tarefa agendada do Resumo é uma **routine do Claude Code**, na conta do usuário, que lê este repositório. Ela roda **segunda às 7:07** (America/Sao_Paulo) e segue `docs/rotinas/resumo-semanal.md`.
 - A skill "humanizer" fica **versionada no repositório** (`.claude/skills/humanizer/`), por decisão do usuário. Por isso a routine, que lê o repo, tem acesso a ela. O "gerar agora" abre o chat do claude.ai, onde a skill só existe se estiver também na conta. O prompt dele pede a revisão do texto de qualquer forma.
+
+## Atualização (2026-10-07, issue #13)
+
+- **Exceção, decidida pelo usuário:** pelo chat, a pedido dele, o Claude pode registrar a Decisão de aceitar um *projeto* mesmo que isso crie um Objetivo numa Trilha que já tem Objetivo em andamento. O Objetivo nasce ligado ao projeto (`projeto_de`), serve ao Objetivo da Recomendação e não o substitui. Fora isso, a regra continua: o Claude só define Objetivo numa Trilha sem Objetivo em andamento.
+- O conector ganhou `decidir_recomendacao` (aceitar, ou recusar com Motivo) e `definir_objetivo`. O `consultar_trilha` passou a trazer as Decisões passadas, que a routine do Resumo usa para acertar as Recomendações.
+- Registrar uma Decisão é criação: o Claude continua sem editar nem apagar. Marcar um item da Biblioteca como feito muda o que existe e fica só no app.

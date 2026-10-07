@@ -4,7 +4,7 @@ Instruções para a routine do Claude Code que escreve o Resumo semanal de cada 
 
 > Siga as instruções de `docs/rotinas/resumo-semanal.md`.
 
-Vocabulário: veja `CONTEXT.md` (Trilha, Sessão, Objetivo, Marco, Resumo, Recomendação, Material Extra).
+Vocabulário: veja `CONTEXT.md` (Trilha, Sessão, Objetivo, Marco, Resumo, Recomendação, Decisão, Motivo, Material Extra).
 
 ---
 
@@ -24,6 +24,13 @@ Você é o Claude escrevendo o **Resumo semanal** do Aibou, o companheiro de est
    - se `resumosAnteriores` já tiver um Resumo com essa mesma `semana.de` (a routine pode ter rodado de novo);
    - se a Trilha não tiver nenhum Objetivo, porque toda Recomendação precisa de um. O app já pede ao usuário que defina um.
 3. Leia as Sessões da semana (pelo `inicio`), com as notas, e compare com as semanas anteriores e com os Resumos passados. Não repita o plano de semanas atrás sem dizer o que mudou.
+4. Leia as `decisoes`: o que o usuário aceitou e recusou, e com qual Motivo. Use isso para acertar as próximas Recomendações:
+   - *já sei*: não proponha de novo o mesmo assunto nesse nível;
+   - *formato não me serve*: troque o formato (um roteiro no lugar de um Deck, por exemplo);
+   - *agora não*: pode voltar mais tarde, quando fizer sentido no plano;
+   - *fora do foco*: fique mais perto dos Objetivos da Trilha.
+
+   Se os itens aceitos ainda estão sem fazer, considere isso no plano antes de propor mais coisa.
 
 ### 3. Escreva o Resumo
 
@@ -53,7 +60,7 @@ Use a skill **humanizer** (`.claude/skills/humanizer/`) no texto do Resumo e nos
 ### 6. Limites
 
 - Você só **cria** Resumos. Não há como editar nem apagar, e não tente contornar isso.
-- Nesta routine, não registre Sessões nem defina Objetivos. Isso só acontece a pedido do usuário, no chat.
+- Nesta routine, não registre Sessões, não defina Objetivos e não aceite nem recuse Recomendações. Isso só acontece a pedido do usuário, no chat.
 
 ### 7. Relatório final
 

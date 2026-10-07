@@ -35,7 +35,9 @@ Análise semanal gerada pelo Claude, por Trilha, a partir das Sessões, dos Obje
 Uma proposta concreta do Claude dentro de um Resumo, como um projeto, um roteiro, um deck de Anki ou um material. Sempre ligada a um Objetivo. Pode ser aceita ou recusada com um clique, no app ou pelo chat.
 
 **Decisão**
-O registro de que uma Recomendação foi aceita ou recusada. Toda recusa exige um Motivo. As Decisões ficam guardadas para o Claude aprender as preferências ao longo do tempo.
+O registro de que uma Recomendação foi aceita ou recusada. Toda recusa exige um Motivo. Cada Recomendação tem uma Decisão só. Ela é tomada no app ou pelo chat, onde o Claude a registra a pedido do usuário. As Decisões ficam guardadas para o Claude aprender as preferências ao longo do tempo.
+
+Aceitar um *projeto* cria um Objetivo abstrato ligado ao Objetivo da Recomendação, mesmo que a Trilha já tenha outro em andamento: o novo serve ao existente, e não o substitui. Concluído, ele conta como item na barra do Objetivo a que serve. Aceitar um Deck ou Material Extra põe o item na Biblioteca. Um *roteiro* aceito fica só com a Decisão.
 
 **Motivo**
 Por que uma Recomendação foi recusada, escolhido com um toque: *já sei*, *formato não me serve*, *agora não*, *fora do foco*.

@@ -136,6 +136,12 @@ export type Decisao = {
   decididaEm: Date;
 } & ({ resposta: 'aceita'; motivo: null } | { resposta: 'recusada'; motivo: Motivo });
 
+// Uma Decisão passada com o que foi recomendado, para o Claude aprender as
+// preferências do usuário.
+export type DecisaoPassada = Decisao & {
+  recomendacao: Pick<Recomendacao, 'objetivoId' | 'tipo' | 'titulo' | 'descricao'>;
+};
+
 export type Resposta =
   | { recomendacaoId: string; resposta: 'aceita' }
   | { recomendacaoId: string; resposta: 'recusada'; motivo: Motivo };
@@ -1092,11 +1098,12 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       return resumosDaTrilha(trilhaId, limite);
     },
 
-    // Aceitar ou recusar é gesto do usuário. Aceito, o projeto vira Objetivo e
-    // o Deck ou Material Extra entra na Biblioteca da Trilha; o roteiro fica só
-    // com a Decisão.
-    async decidirRecomendacao(ator: Ator, resposta: Resposta): Promise<Decisao> {
-      if (ator !== 'usuario') throw new PermissaoNegada(ator, 'responder Recomendação');
+    // Aceitar ou recusar é escolha do usuário, no app ou pelo chat (aí o Claude
+    // registra a Decisão a pedido dele). Aceito, o projeto vira Objetivo e o
+    // Deck ou Material Extra entra na Biblioteca da Trilha; o roteiro fica só
+    // com a Decisão. O Objetivo do projeto nasce mesmo com outro em andamento,
+    // porque é ligado a ele e não o substitui (ADR 0002, atualização da #13).
+    async decidirRecomendacao(_ator: Ator, resposta: Resposta): Promise<Decisao> {
       if (resposta.resposta !== 'aceita' && resposta.resposta !== 'recusada')
         throw new EntradaInvalida('Uma Recomendação é aceita ou recusada.');
       if (resposta.resposta === 'recusada' && !MOTIVOS.includes(resposta.motivo))
@@ -1164,6 +1171,42 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
         : atualizacao.not('feito_em', 'is', null));
       if (error) throw error;
       return paraItem(await buscar());
+    },
+
+    // Todo Ator lê tudo. As Decisões da Trilha, mais recentes primeiro.
+    async listarDecisoes(
+      _ator: Ator,
+      { trilhaId }: { trilhaId: string },
+    ): Promise<DecisaoPassada[]> {
+      const { data, error } = await supabase
+        .from('decisoes')
+        .select(
+          `${COLUNAS_DECISAO}, ` +
+            'recomendacoes!inner (objetivo_id, tipo, titulo, descricao, resumos!inner (trilha_id))',
+        )
+        .eq('recomendacoes.resumos.trilha_id', trilhaId)
+        .order('decidida_em', { ascending: false })
+        .overrideTypes<
+          (LinhaDecisao & {
+            recomendacoes: {
+              objetivo_id: string;
+              tipo: TipoRecomendacao;
+              titulo: string;
+              descricao: string;
+            };
+          })[],
+          { merge: false }
+        >();
+      if (error) throw error;
+      return data.map((linha) => ({
+        ...paraDecisao(linha),
+        recomendacao: {
+          objetivoId: linha.recomendacoes.objetivo_id,
+          tipo: linha.recomendacoes.tipo,
+          titulo: linha.recomendacoes.titulo,
+          descricao: linha.recomendacoes.descricao,
+        },
+      }));
     },
 
     // Todo Ator lê tudo. Na ordem em que entraram.

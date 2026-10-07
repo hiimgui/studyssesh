@@ -5,9 +5,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   EntradaInvalida,
+  MOTIVOS,
   PermissaoNegada,
   type Companheiro,
+  type Decisao,
+  type Motivo,
   type Objetivo,
+  type Periodo,
   type Resumo,
 } from '../companheiro/companheiro';
 
@@ -31,14 +35,23 @@ const paraOChat = (objetivo: Objetivo) =>
         situacao: objetivo.situacao,
       };
 
+const decisaoParaOChat = (decisao: Decisao) => ({
+  recomendacaoId: decisao.recomendacaoId,
+  resposta: decisao.resposta,
+  motivo: decisao.motivo,
+  decididaEm: decisao.decididaEm.toISOString(),
+});
+
 const resumoParaOChat = (resumo: Resumo) => ({
   semana: resumo.semana,
   geradoEm: resumo.geradoEm.toISOString(),
   texto: resumo.texto,
-  recomendacoes: resumo.recomendacoes.map(({ objetivoId, tipo, titulo }) => ({
+  recomendacoes: resumo.recomendacoes.map(({ id, objetivoId, tipo, titulo, decisao }) => ({
+    id,
     objetivoId,
     tipo,
     titulo,
+    decisao: decisao && { resposta: decisao.resposta, motivo: decisao.motivo },
   })),
 });
 
@@ -66,7 +79,10 @@ export function criarServidorMcp(companheiro: Companheiro) {
         'Use consultar_progresso para ver Trilhas, horas, Marcos, Objetivos e dias estudados no mês ' +
         '(e os ids das Trilhas). Use registrar_sessao quando o usuário contar um estudo feito longe ' +
         'do app, sempre com uma nota do que foi estudado. Para o Resumo semanal de uma Trilha, ' +
-        'leia com consultar_trilha e grave com gravar_resumo. Horários no fuso America/Sao_Paulo.',
+        'leia com consultar_trilha e grave com gravar_resumo; as Decisões passadas mostram o que o ' +
+        'usuário aceitou e recusou, e por quê. Quando o usuário pedir no chat, use decidir_recomendacao ' +
+        'para aceitar ou recusar uma Recomendação (recusa sempre com Motivo) e definir_objetivo para ' +
+        'definir o Objetivo de uma Trilha sem Objetivo em andamento. Horários no fuso America/Sao_Paulo.',
     },
   );
 
@@ -136,7 +152,9 @@ export function criarServidorMcp(companheiro: Companheiro) {
       title: 'Consultar Trilha',
       description:
         'Tudo o que o Resumo semanal de uma Trilha precisa: os Objetivos (todos, com id e ' +
-        'situação), as Sessões mais recentes com nota e origem, e os últimos Resumos.',
+        'situação), as Sessões mais recentes com nota e origem, os últimos Resumos (com as ' +
+        'Recomendações, seus ids e a Decisão de cada uma) e todas as Decisões passadas, mais ' +
+        'recentes primeiro.',
       inputSchema: {
         trilha_id: z.string().describe('Id da Trilha, de consultar_progresso.'),
       },
@@ -145,10 +163,11 @@ export function criarServidorMcp(companheiro: Companheiro) {
       responder(async () => {
         const trilha = (await companheiro.listarTrilhas('claude')).find((t) => t.id === trilha_id);
         if (!trilha) throw new EntradaInvalida('Trilha não encontrada entre as ativas.');
-        const [objetivos, sessoes, resumos] = await Promise.all([
+        const [objetivos, sessoes, resumos, decisoes] = await Promise.all([
           companheiro.listarObjetivos('claude', { trilhaId: trilha_id }),
           companheiro.listarSessoes('claude', { trilhaId: trilha_id, limite: 50 }),
           companheiro.listarResumos('claude', { trilhaId: trilha_id, limite: 3 }),
+          companheiro.listarDecisoes('claude', { trilhaId: trilha_id }),
         ]);
         return {
           trilha: { id: trilha.id, nome: trilha.nome },
@@ -161,6 +180,13 @@ export function criarServidorMcp(companheiro: Companheiro) {
             origem: s.origem,
           })),
           resumosAnteriores: resumos.map(resumoParaOChat),
+          decisoes: decisoes.map((d) => ({
+            ...decisaoParaOChat(d),
+            objetivoId: d.recomendacao.objetivoId,
+            tipo: d.recomendacao.tipo,
+            titulo: d.recomendacao.titulo,
+            descricao: d.recomendacao.descricao,
+          })),
         };
       }),
   );
@@ -209,6 +235,73 @@ export function criarServidorMcp(companheiro: Companheiro) {
           })),
         });
         return { id: resumo.id, ...resumoParaOChat(resumo) };
+      }),
+  );
+
+  servidor.registerTool(
+    'decidir_recomendacao',
+    {
+      title: 'Decidir Recomendação',
+      description:
+        'Registra a Decisão do usuário sobre uma Recomendação, só quando ele pedir no chat. ' +
+        'Aceita: um projeto vira Objetivo ligado ao Objetivo da Recomendação; Deck e Material ' +
+        'Extra vão para a Biblioteca. Recusada: exige o Motivo (ja-sei, formato-nao-serve, ' +
+        'agora-nao ou fora-do-foco). Cada Recomendação se responde uma vez só.',
+      inputSchema: {
+        recomendacao_id: z.string().describe('Id da Recomendação, de consultar_trilha.'),
+        resposta: z.enum(['aceita', 'recusada']),
+        motivo: z
+          .enum(MOTIVOS as [Motivo, ...Motivo[]])
+          .optional()
+          .describe('Obrigatório para recusar.'),
+      },
+    },
+    ({ recomendacao_id, resposta, motivo }) =>
+      responder(async () =>
+        decisaoParaOChat(
+          await companheiro.decidirRecomendacao(
+            'claude',
+            resposta === 'aceita'
+              ? { recomendacaoId: recomendacao_id, resposta }
+              : { recomendacaoId: recomendacao_id, resposta, motivo: motivo as Motivo },
+          ),
+        ),
+      ),
+  );
+
+  servidor.registerTool(
+    'definir_objetivo',
+    {
+      title: 'Definir Objetivo',
+      description:
+        'Define o Objetivo de uma Trilha sem Objetivo em andamento, só quando o usuário pedir. ' +
+        'Abstrato: algo a alcançar (descricao). Mensurável: horas de estudo (meta_horas) num ' +
+        'período: "mes" (o padrão), "semana" (segunda a domingo) ou datas { de, ate } em AAAA-MM-DD.',
+      inputSchema: {
+        trilha_id: z.string().describe('Id da Trilha, de consultar_progresso.'),
+        tipo: z.enum(['abstrato', 'mensuravel']),
+        descricao: z.string().optional().describe('Para o abstrato: o que se quer alcançar.'),
+        meta_horas: z.number().optional().describe('Para o mensurável: horas de estudo.'),
+        periodo: z
+          .union([z.enum(['mes', 'semana']), z.object({ de: z.string(), ate: z.string() })])
+          .optional()
+          .describe('Para o mensurável: o mês ou a semana de hoje, ou datas escolhidas.'),
+      },
+    },
+    ({ trilha_id, tipo, descricao, meta_horas, periodo }) =>
+      responder(async () => {
+        const objetivo =
+          tipo === 'abstrato'
+            ? await companheiro.criarObjetivoAbstrato('claude', {
+                trilhaId: trilha_id,
+                descricao: descricao ?? '',
+              })
+            : await companheiro.criarObjetivoMensuravel('claude', {
+                trilhaId: trilha_id,
+                metaHoras: meta_horas ?? NaN,
+                periodo: (periodo ?? 'mes') as Periodo,
+              });
+        return paraOChat(objetivo);
       }),
   );
 
