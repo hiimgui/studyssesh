@@ -6,12 +6,14 @@ import BarraDoMarco from '../components/BarraDoMarco.astro';
 import Celebracao from '../components/Celebracao.astro';
 import Inicio from '../components/Inicio.astro';
 import Resumos from '../components/Resumos.astro';
+import Biblioteca from '../components/Biblioteca.astro';
 import {
   criarCompanheiro,
   EntradaInvalida,
   INATIVIDADE_MS,
   objetivoParaCelebrar,
   semObjetivoEmAndamento,
+  type Objetivo,
   type Periodo,
   type Sessao,
 } from '../companheiro/companheiro';
@@ -22,6 +24,7 @@ import {
   faltam,
   horas,
   nomeDoMes,
+  nomeDoObjetivo,
   progresso,
 } from '../lib/formato';
 
@@ -108,7 +111,13 @@ const sessoes = atual
   : [];
 const objetivos = atual ? await companheiro.listarObjetivos('usuario', { trilhaId: atual.id }) : [];
 const resumos = atual ? await companheiro.listarResumos('usuario', { trilhaId: atual.id }) : [];
+const biblioteca = atual
+  ? await companheiro.listarBiblioteca('usuario', { trilhaId: atual.id })
+  : [];
 const emAndamento = objetivos.filter((o) => o.situacao === 'em-andamento');
+// O Objetivo a que um projeto aceito serve.
+const servido = (o: Objetivo) =>
+  o.tipo === 'abstrato' && o.projetoDe ? objetivos.find((p) => p.id === o.projetoDe) : undefined;
 const pedirObjetivo = !consultando && semObjetivoEmAndamento(objetivos);
 const celebrado = consultando ? null : objetivoParaCelebrar(objetivos);
 // A animação da celebração toca na hora da conclusão; depois, fica parada.
@@ -279,6 +288,9 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
                       )}
                     </span>
                   </div>
+                  {servido(o) && (
+                    <p class="suave projeto-de">Projeto para: {nomeDoObjetivo(servido(o)!)}</p>
+                  )}
                   {/* Concluído é chegar lá: a barra enche, mesmo sem itens ligados. */}
                   <BarraDeProgresso
                     valor={o.situacao === 'concluido' ? 1 : o.itens.concluidos}
@@ -296,7 +308,7 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
                     <>
                       <p class="suave">
                         {o.itens.total === 0
-                          ? 'Nenhum item ligado ainda. Projetos e materiais aceitos vão aparecer aqui.'
+                          ? 'Nenhum item ligado ainda. Projetos, Decks e materiais aceitos num Resumo contam aqui.'
                           : `${o.itens.concluidos} de ${o.itens.total} itens concluídos.`}
                       </p>
                       {!consultando && (
@@ -548,6 +560,16 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
             consultando={!!consultando}
           />
 
+          {/* Antes do primeiro Resumo não há o que aceitar: a seção ainda não aparece. */}
+          {(resumos.length > 0 || biblioteca.length > 0) && (
+            <Biblioteca
+              trilha={atual}
+              itens={biblioteca}
+              objetivos={objetivos}
+              consultando={!!consultando}
+            />
+          )}
+
           <section class="sessoes" aria-labelledby="titulo-sessoes">
             <h2 id="titulo-sessoes">{consultando ? 'Sessões' : 'Sessões recentes'}</h2>
             {sessoes.length === 0 ? (
@@ -788,6 +810,10 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
   .placar {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  .projeto-de {
+    font-size: 0.8125rem;
   }
 
   .objetivo[data-situacao='encerrado'] h2,

@@ -1,5 +1,10 @@
 import { FUSO, meiaNoite, mesDe, type Data } from '../companheiro/fuso';
-import type { ObjetivoMensuravel } from '../companheiro/companheiro';
+import type {
+  Motivo,
+  Objetivo,
+  ObjetivoMensuravel,
+  TipoRecomendacao,
+} from '../companheiro/companheiro';
 
 // Horas de estudo em texto curto: "45 min", "3h", "4h 30min".
 export const horas = (segundos: number) => {
@@ -26,6 +31,24 @@ export const descreverPeriodo = ({ de, ate }: ObjetivoMensuravel['periodo']) => 
 // "10h de estudo em outubro".
 export const tituloDoObjetivo = (o: ObjetivoMensuravel) =>
   `${horas(o.metaHoras * 3600)} de estudo ${descreverPeriodo(o.periodo)}`;
+
+// O nome de qualquer Objetivo numa linha: a descrição ou a meta de horas.
+export const nomeDoObjetivo = (o: Objetivo) =>
+  o.tipo === 'abstrato' ? o.descricao : tituloDoObjetivo(o);
+
+export const ROTULO_DO_TIPO: Record<TipoRecomendacao, string> = {
+  projeto: 'Projeto',
+  roteiro: 'Roteiro',
+  deck: 'Deck',
+  material: 'Material Extra',
+};
+
+export const ROTULO_DO_MOTIVO: Record<Motivo, string> = {
+  'ja-sei': 'já sei',
+  'formato-nao-serve': 'formato não me serve',
+  'agora-nao': 'agora não',
+  'fora-do-foco': 'fora do foco',
+};
 
 export const progresso = (o: ObjetivoMensuravel) =>
   `${horas(o.estudadoSegundos)} de ${horas(o.metaHoras * 3600)}`;

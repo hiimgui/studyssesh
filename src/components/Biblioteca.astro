@@ -1,0 +1,220 @@
+---
+import type { ItemDaBiblioteca, Objetivo, Trilha } from '../companheiro/companheiro';
+import { nomeDoObjetivo, ROTULO_DO_TIPO } from '../lib/formato';
+
+// Os Decks e Materiais Extras aceitos na Trilha. Cada item abre pelo link e
+// se marca como feito, o que avança a barra do Objetivo abstrato ligado. Na
+// consulta de uma Trilha arquivada, só leitura.
+interface Props {
+  trilha: Trilha;
+  itens: ItemDaBiblioteca[];
+  objetivos: Objetivo[];
+  consultando: boolean;
+}
+
+const { trilha, itens, objetivos, consultando } = Astro.props;
+// O que falta fazer vem antes; dentro de cada grupo, na ordem em que entrou.
+const ordenados = [...itens].sort((a, b) => Number(!!a.feitoEm) - Number(!!b.feitoEm));
+const feitos = itens.filter((i) => i.feitoEm).length;
+const para = (id: string) => {
+  const o = objetivos.find((x) => x.id === id);
+  return o ? nomeDoObjetivo(o) : 'Objetivo';
+};
+---
+
+<section class="biblioteca" aria-labelledby="titulo-biblioteca">
+  <div class="cabeca">
+    <h2 id="titulo-biblioteca">Biblioteca</h2>
+    <p class="suave">
+      {
+        itens.length === 0
+          ? consultando
+            ? 'Esta Trilha não teve itens na Biblioteca.'
+            : 'Decks e Materiais Extras aceitos num Resumo ficam aqui.'
+          : `${feitos} de ${itens.length} ${itens.length === 1 ? 'item feito' : 'itens feitos'}.`
+      }
+    </p>
+  </div>
+
+  {
+    ordenados.length > 0 && (
+      <ul class="itens">
+        {ordenados.map((item) => (
+          <li id={`item-${item.id}`} data-feito={item.feitoEm ? '' : undefined}>
+            {consultando ? (
+              <span class="marca" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                  <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+                  <path d="M4.5 8.25 7 10.75 11.75 5.5" />
+                </svg>
+              </span>
+            ) : (
+              <form method="post" action="/biblioteca">
+                <input type="hidden" name="item" value={item.id} />
+                <input type="hidden" name="feito" value={item.feitoEm ? 'nao' : 'sim'} />
+                <input type="hidden" name="voltar" value={`/?trilha=${trilha.id}#item-${item.id}`} />
+                <button
+                  class="marca"
+                  type="submit"
+                  aria-pressed={item.feitoEm ? 'true' : 'false'}
+                  aria-label={`Feito: ${item.titulo}`}
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                    <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+                    <path d="M4.5 8.25 7 10.75 11.75 5.5" />
+                  </svg>
+                </button>
+              </form>
+            )}
+            <div class="conteudo">
+              <span class="titulo">
+                {item.url ? (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer">
+                    {item.titulo}
+                  </a>
+                ) : (
+                  item.titulo
+                )}
+              </span>
+              {item.descricao && <span class="descricao">{item.descricao}</span>}
+              <span class="suave meta">
+                {ROTULO_DO_TIPO[item.tipo]} · Para: {para(item.objetivoId)}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</section>
+
+<style>
+  .biblioteca {
+    display: grid;
+    gap: 1.25rem;
+    max-width: 36rem;
+  }
+
+  .cabeca {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .cabeca p {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .itens {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .itens li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.75rem;
+    align-items: start;
+    padding-block: 0.875rem;
+    border-top: 1px solid var(--linha);
+  }
+
+  .itens li:last-child {
+    border-bottom: 1px solid var(--linha);
+  }
+
+  .itens form {
+    display: contents;
+  }
+
+  /* A caixa de "feito": vazia no que falta, marcada e na cor de destaque no feito. */
+  .marca {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    margin: -0.375rem 0 0 -0.5rem;
+    padding: 0;
+    background: none;
+    color: var(--texto-suave);
+  }
+
+  button.marca:hover {
+    opacity: 1;
+    color: var(--texto);
+  }
+
+  .marca svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .marca path {
+    stroke-width: 1.75;
+    stroke-dasharray: 11;
+    stroke-dashoffset: 11;
+    transition: stroke-dashoffset 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-feito] .marca {
+    color: var(--destaque);
+  }
+
+  [data-feito] .marca path {
+    stroke-dashoffset: 0;
+  }
+
+  /* Na consulta, só os feitos levam a marca; o resto fica sem caixa. */
+  span.marca {
+    margin-left: 0;
+    width: 1rem;
+    height: 1.6em;
+  }
+
+  li:not([data-feito]) span.marca {
+    visibility: hidden;
+  }
+
+  .conteudo {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+
+  .titulo {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .titulo a {
+    text-underline-offset: 3px;
+    text-decoration-color: var(--linha);
+  }
+
+  .titulo a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  [data-feito] .titulo,
+  [data-feito] .descricao {
+    color: var(--texto-suave);
+  }
+
+  .descricao {
+    text-wrap: pretty;
+  }
+
+  .meta {
+    font-size: 0.8125rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marca path {
+      transition: none;
+    }
+  }
+</style>
