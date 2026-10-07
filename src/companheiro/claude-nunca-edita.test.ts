@@ -21,6 +21,7 @@ const LEITURAS: Operacao[] = [
   'listarResumos',
   'listarBiblioteca',
   'listarDecisoes',
+  'baixarDeck',
 ];
 // O Claude cria: Resumos (com Recomendações), toda semana; e, a pedido do
 // usuário pelo chat, Sessões com nota, Objetivo numa Trilha sem Objetivo em
@@ -83,13 +84,26 @@ async function contaCheia() {
           tipo: 'deck',
           titulo: 'Kana em 2 semanas',
           descricao: 'Revisão diária.',
+          cartas: [{ frente: 'あ', verso: 'a' }],
+        },
+        {
+          objetivoId: abstrato.id,
+          tipo: 'deck',
+          titulo: 'Vocabulário N5',
+          descricao: 'As palavras do simulado.',
+          cartas: [{ frente: '水', verso: 'água' }],
         },
       ],
     });
   const primeiro = await resumoDa('2026-09-28', 'Semana de kana.');
-  const [simulado, deckEmAberto] = primeiro.recomendacoes;
+  const [simulado, deckEmAberto, vocabulario] = primeiro.recomendacoes;
   await companheiro.decidirRecomendacao('usuario', { recomendacaoId: simulado.id, resposta: 'aceita' });
-  const [itemDaBiblioteca] = await companheiro.listarBiblioteca('usuario', { trilhaId: japones.id });
+  // Um depois do outro: a Biblioteca fica na ordem em que os itens entraram.
+  relogio.avancar(MINUTO);
+  await companheiro.decidirRecomendacao('usuario', { recomendacaoId: vocabulario.id, resposta: 'aceita' });
+  const [itemDaBiblioteca, deckNaBiblioteca] = await companheiro.listarBiblioteca('usuario', {
+    trilhaId: japones.id,
+  });
   await companheiro.registrarSessao('usuario', {
     trilhaId: japones.id,
     minutos: 11 * 60,
@@ -135,6 +149,7 @@ async function contaCheia() {
     listarResumos: () => companheiro.listarResumos('claude', { trilhaId: japones.id }),
     listarBiblioteca: () => companheiro.listarBiblioteca('claude', { trilhaId: japones.id }),
     listarDecisoes: () => companheiro.listarDecisoes('claude', { trilhaId: japones.id }),
+    baixarDeck: () => companheiro.baixarDeck('claude', { itemId: deckNaBiblioteca.id }),
     criarResumo: () => resumoDa('2026-10-05', 'Semana de kanji.'),
     registrarSessao: () =>
       companheiro.registrarSessao('claude', { trilhaId: japones.id, minutos: 5, nota: 'x' }),
@@ -228,6 +243,7 @@ describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
     expect(depois.resumos.at(-1)?.recomendacoes.map((r) => r.decisao)).toEqual([
       antes.resumos.at(-1)?.recomendacoes[0].decisao,
       decisao,
+      antes.resumos.at(-1)?.recomendacoes[2].decisao,
     ]);
     expect(depois.decisoes.slice(1)).toEqual(antes.decisoes);
     // O Deck aceito entra na Biblioteca; o item que já estava fica como estava.

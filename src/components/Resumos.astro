@@ -136,7 +136,11 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
                         )}
                       </span>
                       {rec.descricao && <span class="descricao">{rec.descricao}</span>}
-                      <span class="suave objetivo">Para: {nomeDoObjetivo(rec.objetivoId)}</span>
+                      <span class="suave objetivo">
+                        {rec.cartas &&
+                          `${rec.cartas.length} ${rec.cartas.length === 1 ? 'carta' : 'cartas'} · `}
+                        Para: {nomeDoObjetivo(rec.objetivoId)}
+                      </span>
                       {rec.decisao ? (
                         <p class="resposta">{respondida(rec)}</p>
                       ) : (

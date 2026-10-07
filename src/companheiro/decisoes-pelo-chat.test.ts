@@ -21,6 +21,7 @@ async function resumoNaTrilha() {
     tipo,
     titulo,
     descricao: `Sobre ${titulo}.`,
+    cartas: tipo === 'deck' ? [{ frente: 'O que é MCP?', verso: 'Um protocolo.' }] : undefined,
   });
   const resumo = await companheiro.criarResumo('claude', {
     trilhaId: trilha.id,

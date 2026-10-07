@@ -2,9 +2,10 @@
 import type { ItemDaBiblioteca, Objetivo, Trilha } from '../companheiro/companheiro';
 import { nomeDoObjetivo, ROTULO_DO_TIPO } from '../lib/formato';
 
-// Os Decks e Materiais Extras aceitos na Trilha. Cada item abre pelo link e
-// se marca como feito, o que avança a barra do Objetivo abstrato ligado. Na
-// consulta de uma Trilha arquivada, só leitura.
+// Os Decks e Materiais Extras aceitos na Trilha. Cada item abre pelo link (o
+// Deck também baixa como .apkg) e se marca como feito, o que avança a barra do
+// Objetivo abstrato ligado. Na consulta de uma Trilha arquivada, só leitura,
+// mas o Deck continua baixando.
 interface Props {
   trilha: Trilha;
   itens: ItemDaBiblioteca[];
@@ -78,8 +79,18 @@ const para = (id: string) => {
               </span>
               {item.descricao && <span class="descricao">{item.descricao}</span>}
               <span class="suave meta">
-                {ROTULO_DO_TIPO[item.tipo]} · Para: {para(item.objetivoId)}
+                {ROTULO_DO_TIPO[item.tipo]}
+                {item.cartas > 0 && ` · ${item.cartas} ${item.cartas === 1 ? 'carta' : 'cartas'}`} · Para:{' '}
+                {para(item.objetivoId)}
               </span>
+              {item.tipo === 'deck' && item.cartas > 0 && (
+                <a class="baixar" href={`/deck?item=${item.id}`} download>
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                    <path d="M8 2.5v7.75M4.75 7 8 10.25 11.25 7M2.5 13.5h11" />
+                  </svg>
+                  Baixar para o Anki
+                </a>
+              )}
             </div>
           </li>
         ))}
@@ -210,10 +221,45 @@ const para = (id: string) => {
 
   .meta {
     font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Baixar o Deck: uma ação de texto, no traço dos ícones da lista. */
+  .baixar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    justify-self: start;
+    margin-top: 0.375rem;
+    padding-block: 0.25rem;
+    font-size: 0.8125rem;
+    color: var(--texto);
+    text-decoration: underline;
+    text-decoration-color: var(--linha);
+    text-underline-offset: 3px;
+  }
+
+  .baixar:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .baixar svg {
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .baixar:hover svg {
+    transform: translateY(1px);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .marca path {
+    .marca path,
+    .baixar svg {
       transition: none;
     }
   }

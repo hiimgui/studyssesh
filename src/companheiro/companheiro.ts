@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { gerarApkg, type CartaDoDeck } from '../lib/apkg';
 import { dataDe, ehData, meiaNoite, mesDe, semanaDe, somarDias, type Data } from './fuso';
 
 // Quem está agindo: o próprio usuário (app) ou o Claude (conector MCP).
@@ -121,6 +122,8 @@ export interface Recomendacao {
   titulo: string;
   descricao: string;
   url: string | null;
+  // As cartas de um Deck; null nos outros tipos.
+  cartas: Carta[] | null;
   // A resposta do usuário, ou null enquanto ninguém respondeu.
   decisao: Decisao | null;
 }
@@ -157,6 +160,8 @@ export interface ItemDaBiblioteca {
   titulo: string;
   descricao: string;
   url: string | null;
+  // Quantas cartas o Deck tem para baixar; 0 num Material Extra.
+  cartas: number;
   adicionadoEm: Date;
   feitoEm: Date | null;
 }
@@ -183,6 +188,17 @@ export interface NovaRecomendacao {
   titulo: string;
   descricao: string;
   url?: string;
+  // Só num Deck, e obrigatórias nele: o app gera o .apkg a partir delas.
+  cartas?: Carta[];
+}
+
+// Uma carta de Anki de um Deck: a pergunta na frente, a resposta no verso.
+export type Carta = CartaDoDeck;
+
+// Um Deck pronto para importar no Anki.
+export interface DeckBaixado {
+  nomeDoArquivo: string;
+  apkg: Uint8Array<ArrayBuffer>;
 }
 
 // Horas acumuladas e a barra até o próximo Marco de uma Trilha.
@@ -433,6 +449,7 @@ interface LinhaResumo {
     titulo: string;
     descricao: string;
     url: string | null;
+    cartas: Carta[] | null;
     decisoes: LinhaDecisao | null;
   }[];
 }
@@ -456,7 +473,7 @@ const paraDecisao = (linha: LinhaDecisao): Decisao =>
 
 const COLUNAS_RESUMO =
   'id, trilha_id, semana_de, semana_ate, texto, fontes, gerado_em, ' +
-  `recomendacoes (id, objetivo_id, posicao, tipo, titulo, descricao, url, decisoes (${COLUNAS_DECISAO}))`;
+  `recomendacoes (id, objetivo_id, posicao, tipo, titulo, descricao, url, cartas, decisoes (${COLUNAS_DECISAO}))`;
 
 interface LinhaItem {
   id: string;
@@ -465,12 +482,18 @@ interface LinhaItem {
   objetivo_id: string;
   adicionado_em: string;
   feito_em: string | null;
-  recomendacoes: { tipo: 'deck' | 'material'; titulo: string; descricao: string; url: string | null };
+  recomendacoes: {
+    tipo: 'deck' | 'material';
+    titulo: string;
+    descricao: string;
+    url: string | null;
+    cartas: Carta[] | null;
+  };
 }
 
 const COLUNAS_ITEM =
   'id, trilha_id, recomendacao_id, objetivo_id, adicionado_em, feito_em, ' +
-  'recomendacoes (tipo, titulo, descricao, url)';
+  'recomendacoes (tipo, titulo, descricao, url, cartas)';
 
 const paraItem = (linha: LinhaItem): ItemDaBiblioteca => ({
   id: linha.id,
@@ -481,6 +504,7 @@ const paraItem = (linha: LinhaItem): ItemDaBiblioteca => ({
   titulo: linha.recomendacoes.titulo,
   descricao: linha.recomendacoes.descricao,
   url: linha.recomendacoes.url,
+  cartas: linha.recomendacoes.cartas?.length ?? 0,
   adicionadoEm: new Date(linha.adicionado_em),
   feitoEm: linha.feito_em ? new Date(linha.feito_em) : null,
 });
@@ -501,6 +525,7 @@ const paraResumo = (linha: LinhaResumo): Resumo => ({
       titulo: r.titulo,
       descricao: r.descricao,
       url: r.url,
+      cartas: r.cartas,
       decisao: r.decisoes ? paraDecisao(r.decisoes) : null,
     })),
 });
@@ -1058,6 +1083,13 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
         if (!r.titulo?.trim()) throw new EntradaInvalida('Toda Recomendação precisa de título.');
         if (r.url !== undefined && r.url !== null && !ehLink(r.url))
           throw new EntradaInvalida('O link da Recomendação precisa ser http(s).');
+        if (r.tipo !== 'deck' && r.cartas !== undefined && r.cartas !== null)
+          throw new EntradaInvalida('Só um Deck tem cartas.');
+        if (
+          r.tipo === 'deck' &&
+          !(r.cartas?.length && r.cartas.every((c) => c.frente?.trim() && c.verso?.trim()))
+        )
+          throw new EntradaInvalida('Um Deck traz cartas, cada uma com frente e verso.');
       }
       if (!recomendacoes.some((r) => r.tipo === 'material'))
         throw new EntradaInvalida('Todo Resumo traz pelo menos um Material Extra.');
@@ -1078,6 +1110,10 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
           titulo: r.titulo.trim(),
           descricao: r.descricao?.trim() ?? '',
           url: r.url ?? null,
+          cartas:
+            r.tipo === 'deck'
+              ? r.cartas!.map((c) => ({ frente: c.frente.trim(), verso: c.verso.trim() }))
+              : null,
         })),
       });
       if (error) throw error;
@@ -1222,6 +1258,36 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
         .overrideTypes<LinhaItem[], { merge: false }>();
       if (error) throw error;
       return data.map(paraItem);
+    },
+
+    // Todo Ator lê tudo, e baixar é ler. O baralho leva o nome da Trilha e do
+    // Deck ("Trilha::Deck"), que o Anki mostra como um baralho dentro do outro.
+    async baixarDeck(_ator: Ator, { itemId }: { itemId: string }): Promise<DeckBaixado> {
+      const { data, error } = await supabase
+        .from('itens_biblioteca')
+        .select('recomendacao_id, trilhas (nome), recomendacoes (tipo, titulo, cartas)')
+        .eq('id', itemId)
+        .maybeSingle<{
+          recomendacao_id: string;
+          trilhas: { nome: string };
+          recomendacoes: { tipo: TipoRecomendacao; titulo: string; cartas: Carta[] | null };
+        }>();
+      if (error) throw error;
+      if (!data) throw new EntradaInvalida('Item da Biblioteca não encontrado.');
+      const { tipo, titulo, cartas } = data.recomendacoes;
+      // Um Deck gravado antes das cartas existirem também não tem o que baixar.
+      if (tipo !== 'deck' || !cartas?.length)
+        throw new EntradaInvalida('Só um Deck se baixa para o Anki.');
+      return {
+        // Sem os caracteres que Windows, macOS ou Linux recusam num nome de arquivo.
+        nomeDoArquivo: `${titulo.replace(/[\\/:*?"<>|\x00-\x1f]/g, '-')}.apkg`,
+        apkg: gerarApkg({
+          id: data.recomendacao_id,
+          nome: `${data.trilhas.nome}::${titulo}`,
+          cartas,
+          agora: relogio(),
+        }),
+      };
     },
 
     // Todo Ator lê tudo. Na ordem em que foram criados.

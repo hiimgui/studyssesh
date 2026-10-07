@@ -198,7 +198,8 @@ export function criarServidorMcp(companheiro: Companheiro) {
       description:
         'Grava o Resumo semanal de uma Trilha (só cria; nunca edita). A semana começa na ' +
         'segunda (semana_de). Precisa de fontes com link e de Recomendações ligadas a Objetivos ' +
-        'da Trilha, com pelo menos um Material Extra (tipo "material").',
+        'da Trilha, com pelo menos um Material Extra (tipo "material"). Um Deck (tipo "deck") ' +
+        'traz as cartas, com frente e verso; o app gera o .apkg a partir delas.',
       inputSchema: {
         trilha_id: z.string().describe('Id da Trilha.'),
         semana_de: z.string().describe('A segunda-feira que abre a semana, AAAA-MM-DD.'),
@@ -214,6 +215,10 @@ export function criarServidorMcp(companheiro: Companheiro) {
               titulo: z.string(),
               descricao: z.string(),
               url: z.string().optional(),
+              cartas: z
+                .array(z.object({ frente: z.string(), verso: z.string() }))
+                .optional()
+                .describe('Só no Deck, e obrigatórias nele: as cartas na ordem de estudo.'),
             }),
           )
           .describe('Propostas concretas; ao menos um Material Extra.'),
@@ -232,6 +237,7 @@ export function criarServidorMcp(companheiro: Companheiro) {
             titulo: r.titulo,
             descricao: r.descricao,
             url: r.url,
+            cartas: r.cartas,
           })),
         });
         return { id: resumo.id, ...resumoParaOChat(resumo) };

@@ -49,4 +49,4 @@ A coleção de Decks e Materiais Extras aceitos dentro de uma Trilha. Cada item 
 Conteúdo de apoio além do plano da semana, como documentação oficial ou vídeos, para quando o plano parecer pouco.
 
 **Deck**
-Um baralho de Anki gerado pelo Claude para uma Trilha, entregue como arquivo pronto para importar.
+Um baralho de Anki gerado pelo Claude para uma Trilha, entregue como arquivo pronto para importar. O Claude escreve as cartas (frente e verso) na Recomendação; o app gera o arquivo `.apkg` quando o Deck é baixado da Biblioteca.
