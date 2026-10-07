@@ -1,11 +1,23 @@
 ---
-import type { Objetivo, Resumo, TipoRecomendacao, Trilha } from '../companheiro/companheiro';
+import {
+  MOTIVOS,
+  type Objetivo,
+  type Recomendacao,
+  type Resumo,
+  type Trilha,
+} from '../companheiro/companheiro';
 import { dataDe, FUSO } from '../companheiro/fuso';
-import { semanaPorExtenso, tituloDoObjetivo } from '../lib/formato';
+import {
+  nomeDoObjetivo as nomeDe,
+  ROTULO_DO_MOTIVO,
+  ROTULO_DO_TIPO,
+  semanaPorExtenso,
+} from '../lib/formato';
 import { linkGerarAgora, resumoAtrasado } from '../lib/resumo';
 
 // Linha do tempo de Resumos da Trilha: o mais recente aberto, os anteriores
-// recolhidos. Na consulta de uma Trilha arquivada, sem "gerar agora".
+// recolhidos. Cada Recomendação em aberto se aceita ou recusa (com Motivo)
+// aqui. Na consulta de uma Trilha arquivada, só leitura e sem "gerar agora".
 interface Props {
   trilha: Trilha;
   resumos: Resumo[];
@@ -22,16 +34,25 @@ const semObjetivo = objetivos.length === 0;
 const atrasado =
   !consultando && !semObjetivo && resumoAtrasado(ultimo ?? null, trilha.criadaEm, agora);
 
-const TIPO: Record<TipoRecomendacao, string> = {
-  projeto: 'Projeto',
-  roteiro: 'Roteiro',
-  deck: 'Deck',
-  material: 'Material Extra',
-};
 const nomeDoObjetivo = (id: string) => {
   const o = objetivos.find((x) => x.id === id);
-  return !o ? 'Objetivo' : o.tipo === 'abstrato' ? o.descricao : tituloDoObjetivo(o);
+  return o ? nomeDe(o) : 'Objetivo';
 };
+// O botão de aceitar diz o que acontece com a Recomendação.
+const ACEITAR: Record<Recomendacao['tipo'], string> = {
+  projeto: 'Virar Objetivo',
+  roteiro: 'Aceitar',
+  deck: 'Pôr na Biblioteca',
+  material: 'Pôr na Biblioteca',
+};
+const respondida = (rec: Recomendacao) => {
+  const d = rec.decisao!;
+  if (d.resposta === 'recusada') return `Recusada: ${ROTULO_DO_MOTIVO[d.motivo]}.`;
+  if (rec.tipo === 'projeto') return 'Aceita. Virou Objetivo desta Trilha.';
+  if (rec.tipo === 'roteiro') return 'Aceita.';
+  return 'Aceita. Está na Biblioteca.';
+};
+const voltarPara = (rec: Recomendacao) => `/?trilha=${trilha.id}#rec-${rec.id}`;
 const quando = (d: Date) =>
   d.toLocaleString('pt-BR', {
     weekday: 'long',
@@ -99,8 +120,12 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
                 <h3>Recomendações</h3>
                 <ul class="recomendacoes">
                   {r.recomendacoes.map((rec) => (
-                    <li data-tipo={rec.tipo}>
-                      <span class="tipo">{TIPO[rec.tipo]}</span>
+                    <li
+                      id={`rec-${rec.id}`}
+                      data-tipo={rec.tipo}
+                      data-resposta={rec.decisao?.resposta}
+                    >
+                      <span class="tipo">{ROTULO_DO_TIPO[rec.tipo]}</span>
                       <span class="titulo">
                         {rec.url ? (
                           <a href={rec.url} target="_blank" rel="noopener noreferrer">
@@ -112,6 +137,37 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
                       </span>
                       {rec.descricao && <span class="descricao">{rec.descricao}</span>}
                       <span class="suave objetivo">Para: {nomeDoObjetivo(rec.objetivoId)}</span>
+                      {rec.decisao ? (
+                        <p class="resposta">{respondida(rec)}</p>
+                      ) : (
+                        !consultando && (
+                          <div class="responder">
+                            <form method="post" action="/recomendacao">
+                              <input type="hidden" name="recomendacao" value={rec.id} />
+                              <input type="hidden" name="voltar" value={voltarPara(rec)} />
+                              <button class="botao-secundario" type="submit" name="resposta" value="aceita">
+                                {ACEITAR[rec.tipo]}
+                              </button>
+                            </form>
+                            <details class="recusar">
+                              <summary>Recusar</summary>
+                              <form method="post" action="/recomendacao" class="motivos">
+                                <input type="hidden" name="recomendacao" value={rec.id} />
+                                <input type="hidden" name="resposta" value="recusada" />
+                                <input type="hidden" name="voltar" value={voltarPara(rec)} />
+                                <p class="suave" id={`motivo-${rec.id}`}>Por quê?</p>
+                                <div class="opcoes-motivo" role="group" aria-labelledby={`motivo-${rec.id}`}>
+                                  {MOTIVOS.map((m) => (
+                                    <button class="motivo" type="submit" name="motivo" value={m}>
+                                      {ROTULO_DO_MOTIVO[m]}
+                                    </button>
+                                  ))}
+                                </div>
+                              </form>
+                            </details>
+                          </div>
+                        )
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -274,5 +330,112 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
 
   .fontes {
     overflow-wrap: anywhere;
+  }
+
+  /* Respondida, a Recomendação recua; a recusada recua mais. */
+  [data-resposta] .titulo,
+  [data-resposta] .descricao {
+    color: var(--texto-suave);
+  }
+
+  [data-resposta='recusada'] .titulo {
+    text-decoration: line-through;
+    text-decoration-color: var(--linha);
+  }
+
+  .resposta {
+    font-size: 0.8125rem;
+  }
+
+  [data-resposta='aceita'] .resposta {
+    color: var(--destaque);
+  }
+
+  [data-resposta='recusada'] .resposta {
+    color: var(--texto-suave);
+  }
+
+  .responder {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.5rem 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .responder button.botao-secundario {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  /* Ocupa o resto da linha, para os Motivos abrirem lado a lado. */
+  .recusar {
+    flex: 1 1 14rem;
+  }
+
+  .recusar > summary {
+    display: inline-block;
+    padding: 0.375rem 0;
+    font-size: 0.8125rem;
+    color: var(--texto-suave);
+    text-decoration: underline;
+    text-decoration-color: var(--linha);
+    text-underline-offset: 3px;
+  }
+
+  .recusar > summary:hover {
+    color: var(--texto);
+    text-decoration-color: currentColor;
+  }
+
+  .recusar[open] > summary {
+    color: var(--texto);
+  }
+
+  .motivos {
+    display: grid;
+    gap: 0.375rem;
+    padding-top: 0.25rem;
+  }
+
+  .motivos p {
+    font-size: 0.8125rem;
+  }
+
+  .opcoes-motivo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .motivo {
+    padding: 0.3125rem 0.625rem;
+    font-size: 0.8125rem;
+    background: none;
+    color: var(--texto);
+    box-shadow: inset 0 0 0 1px var(--linha);
+    transition: box-shadow 120ms ease-out;
+  }
+
+  .motivo:hover {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px var(--texto-suave);
+  }
+
+  /* Ao voltar do envio, a Recomendação respondida aparece em destaque breve. */
+  .recomendacoes li:target {
+    animation: respondida 1.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes respondida {
+    from {
+      background: color-mix(in oklch, var(--destaque) 12%, transparent);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .recomendacoes li:target {
+      animation: none;
+    }
   }
 </style>

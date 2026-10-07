@@ -65,14 +65,22 @@ export interface ObjetivoAbstrato {
   tipo: 'abstrato';
   trilhaId: string;
   descricao: string;
+  // Nascido de um projeto aceito: o Objetivo a que esse projeto serve.
+  projetoDe: string | null;
   criadoEm: Date;
   concluidoEm: Date | null;
-  itens: { concluidos: number; total: number };
+  itens: Itens;
   // Sem período, não há como ficar encerrado.
   situacao: Exclude<SituacaoObjetivo, 'encerrado'>;
 }
 
 export type Objetivo = ObjetivoMensuravel | ObjetivoAbstrato;
+
+// Os itens ligados a um Objetivo: projetos aceitos e itens da Biblioteca.
+export interface Itens {
+  concluidos: number;
+  total: number;
+}
 
 // O mês ou a semana (segunda a domingo) de hoje, ou datas escolhidas.
 export type Periodo = 'mes' | 'semana' | { de: Data; ate: Data };
@@ -113,6 +121,38 @@ export interface Recomendacao {
   titulo: string;
   descricao: string;
   url: string | null;
+  // A resposta do usuário, ou null enquanto ninguém respondeu.
+  decisao: Decisao | null;
+}
+
+// Por que uma Recomendação foi recusada, escolhido com um toque.
+export type Motivo = 'ja-sei' | 'formato-nao-serve' | 'agora-nao' | 'fora-do-foco';
+
+export const MOTIVOS: Motivo[] = ['ja-sei', 'formato-nao-serve', 'agora-nao', 'fora-do-foco'];
+
+// O registro de que uma Recomendação foi aceita ou recusada. Toda recusa tem Motivo.
+export type Decisao = {
+  recomendacaoId: string;
+  decididaEm: Date;
+} & ({ resposta: 'aceita'; motivo: null } | { resposta: 'recusada'; motivo: Motivo });
+
+export type Resposta =
+  | { recomendacaoId: string; resposta: 'aceita' }
+  | { recomendacaoId: string; resposta: 'recusada'; motivo: Motivo };
+
+// Um Deck ou Material Extra aceito. Marcado como feito, avança a barra do
+// Objetivo abstrato ligado.
+export interface ItemDaBiblioteca {
+  id: string;
+  trilhaId: string;
+  recomendacaoId: string;
+  objetivoId: string;
+  tipo: 'deck' | 'material';
+  titulo: string;
+  descricao: string;
+  url: string | null;
+  adicionadoEm: Date;
+  feitoEm: Date | null;
 }
 
 export interface Fonte {
@@ -322,6 +362,7 @@ interface LinhaMensuravel {
   descricao: null;
   criado_em: string;
   concluido_em: string | null;
+  projeto_de: null;
 }
 
 interface LinhaAbstrato {
@@ -334,22 +375,26 @@ interface LinhaAbstrato {
   descricao: string;
   criado_em: string;
   concluido_em: string | null;
+  projeto_de: string | null;
 }
 
 type LinhaObjetivo = LinhaMensuravel | LinhaAbstrato;
 
 const COLUNAS_OBJETIVO =
-  'id, tipo, trilha_id, meta_segundos, periodo_inicio, periodo_fim, descricao, criado_em, concluido_em';
+  'id, tipo, trilha_id, meta_segundos, periodo_inicio, periodo_fim, descricao, criado_em, concluido_em, ' +
+  'projeto_de';
 
-const paraAbstrato = (linha: LinhaAbstrato): ObjetivoAbstrato => ({
+const SEM_ITENS: Itens = { concluidos: 0, total: 0 };
+
+const paraAbstrato = (linha: LinhaAbstrato, itens: Itens = SEM_ITENS): ObjetivoAbstrato => ({
   id: linha.id,
   tipo: 'abstrato',
   trilhaId: linha.trilha_id,
   descricao: linha.descricao,
+  projetoDe: linha.projeto_de,
   criadoEm: new Date(linha.criado_em),
   concluidoEm: linha.concluido_em ? new Date(linha.concluido_em) : null,
-  // Projetos e itens da Biblioteca ainda não existem (#11): nada ligado.
-  itens: { concluidos: 0, total: 0 },
+  itens,
   situacao: linha.concluido_em ? 'concluido' : 'em-andamento',
 });
 
@@ -382,12 +427,57 @@ interface LinhaResumo {
     titulo: string;
     descricao: string;
     url: string | null;
+    decisoes: LinhaDecisao | null;
   }[];
 }
 
+interface LinhaDecisao {
+  recomendacao_id: string;
+  resposta: 'aceita' | 'recusada';
+  motivo: Motivo | null;
+  decidida_em: string;
+}
+
+const COLUNAS_DECISAO = 'recomendacao_id, resposta, motivo, decidida_em';
+
+const paraDecisao = (linha: LinhaDecisao): Decisao =>
+  ({
+    recomendacaoId: linha.recomendacao_id,
+    resposta: linha.resposta,
+    motivo: linha.motivo,
+    decididaEm: new Date(linha.decidida_em),
+  }) as Decisao;
+
 const COLUNAS_RESUMO =
   'id, trilha_id, semana_de, semana_ate, texto, fontes, gerado_em, ' +
-  'recomendacoes (id, objetivo_id, posicao, tipo, titulo, descricao, url)';
+  `recomendacoes (id, objetivo_id, posicao, tipo, titulo, descricao, url, decisoes (${COLUNAS_DECISAO}))`;
+
+interface LinhaItem {
+  id: string;
+  trilha_id: string;
+  recomendacao_id: string;
+  objetivo_id: string;
+  adicionado_em: string;
+  feito_em: string | null;
+  recomendacoes: { tipo: 'deck' | 'material'; titulo: string; descricao: string; url: string | null };
+}
+
+const COLUNAS_ITEM =
+  'id, trilha_id, recomendacao_id, objetivo_id, adicionado_em, feito_em, ' +
+  'recomendacoes (tipo, titulo, descricao, url)';
+
+const paraItem = (linha: LinhaItem): ItemDaBiblioteca => ({
+  id: linha.id,
+  trilhaId: linha.trilha_id,
+  recomendacaoId: linha.recomendacao_id,
+  objetivoId: linha.objetivo_id,
+  tipo: linha.recomendacoes.tipo,
+  titulo: linha.recomendacoes.titulo,
+  descricao: linha.recomendacoes.descricao,
+  url: linha.recomendacoes.url,
+  adicionadoEm: new Date(linha.adicionado_em),
+  feitoEm: linha.feito_em ? new Date(linha.feito_em) : null,
+});
 
 const paraResumo = (linha: LinhaResumo): Resumo => ({
   id: linha.id,
@@ -405,6 +495,7 @@ const paraResumo = (linha: LinhaResumo): Resumo => ({
       titulo: r.titulo,
       descricao: r.descricao,
       url: r.url,
+      decisao: r.decisoes ? paraDecisao(r.decisoes) : null,
     })),
 });
 
@@ -473,18 +564,36 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
   }
 
   async function objetivosDaTrilha(trilhaId: string): Promise<Objetivo[]> {
-    const { data, error } = await supabase
-      .from('objetivos')
-      .select(COLUNAS_OBJETIVO)
-      .eq('trilha_id', trilhaId)
-      .order('criado_em')
-      .overrideTypes<LinhaObjetivo[], { merge: false }>();
-    if (error) throw error;
-    return Promise.all(data.map(paraObjetivo));
-  }
+    const [objetivos, itens] = await Promise.all([
+      supabase
+        .from('objetivos')
+        .select(COLUNAS_OBJETIVO)
+        .eq('trilha_id', trilhaId)
+        .order('criado_em')
+        .overrideTypes<LinhaObjetivo[], { merge: false }>(),
+      supabase.from('itens_biblioteca').select('objetivo_id, feito_em').eq('trilha_id', trilhaId),
+    ]);
+    if (objetivos.error) throw objetivos.error;
+    if (itens.error) throw itens.error;
 
-  function paraObjetivo(linha: LinhaObjetivo): Promise<Objetivo> | Objetivo {
-    return linha.tipo === 'abstrato' ? paraAbstrato(linha) : paraMensuravel(linha);
+    // Cada projeto aceito e cada item da Biblioteca conta para o seu Objetivo:
+    // concluído quando o projeto foi concluído ou o item, marcado como feito.
+    const ligados = new Map<string, Itens>();
+    const contar = (objetivoId: string, concluido: boolean) => {
+      const atual = ligados.get(objetivoId) ?? SEM_ITENS;
+      ligados.set(objetivoId, {
+        concluidos: atual.concluidos + (concluido ? 1 : 0),
+        total: atual.total + 1,
+      });
+    };
+    for (const o of objetivos.data) if (o.projeto_de) contar(o.projeto_de, !!o.concluido_em);
+    for (const i of itens.data) contar(i.objetivo_id, !!i.feito_em);
+
+    return Promise.all(
+      objetivos.data.map((linha) =>
+        linha.tipo === 'abstrato' ? paraAbstrato(linha, ligados.get(linha.id)) : paraMensuravel(linha),
+      ),
+    );
   }
 
   async function estudadoNoPeriodo(
@@ -894,14 +1003,18 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       };
 
       const antes = await buscar();
-      if (antes.concluido_em) return paraAbstrato(antes);
-      const { error } = await supabase
-        .from('objetivos')
-        .update({ concluido_em: relogio().toISOString() })
-        .eq('id', objetivoId)
-        .is('concluido_em', null);
-      if (error) throw error;
-      return paraAbstrato(await buscar());
+      if (!antes.concluido_em) {
+        const { error } = await supabase
+          .from('objetivos')
+          .update({ concluido_em: relogio().toISOString() })
+          .eq('id', objetivoId)
+          .is('concluido_em', null);
+        if (error) throw error;
+      }
+      // Relido com a Trilha, para vir com os itens ligados.
+      return (await objetivosDaTrilha(antes.trilha_id)).find(
+        (o): o is ObjetivoAbstrato => o.id === objetivoId && o.tipo === 'abstrato',
+      )!;
     },
 
     // O Resumo é do Claude (ADR 0002): ele cria, e ninguém edita nem apaga.
@@ -977,6 +1090,95 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       { trilhaId, limite }: { trilhaId: string; limite?: number },
     ): Promise<Resumo[]> {
       return resumosDaTrilha(trilhaId, limite);
+    },
+
+    // Aceitar ou recusar é gesto do usuário. Aceito, o projeto vira Objetivo e
+    // o Deck ou Material Extra entra na Biblioteca da Trilha; o roteiro fica só
+    // com a Decisão.
+    async decidirRecomendacao(ator: Ator, resposta: Resposta): Promise<Decisao> {
+      if (ator !== 'usuario') throw new PermissaoNegada(ator, 'responder Recomendação');
+      if (resposta.resposta !== 'aceita' && resposta.resposta !== 'recusada')
+        throw new EntradaInvalida('Uma Recomendação é aceita ou recusada.');
+      if (resposta.resposta === 'recusada' && !MOTIVOS.includes(resposta.motivo))
+        throw new EntradaInvalida(
+          'Para recusar, diga o Motivo: já sei, formato não me serve, agora não ou fora do foco.',
+        );
+      const { data: rec, error } = await supabase
+        .from('recomendacoes')
+        .select('tipo, titulo, resumos (trilha_id)')
+        .eq('id', resposta.recomendacaoId)
+        .maybeSingle<{ tipo: TipoRecomendacao; titulo: string; resumos: { trilha_id: string } }>();
+      if (error) throw error;
+      if (!rec) throw new EntradaInvalida('Recomendação não encontrada.');
+      await garantirTrilhaAtiva(rec.resumos.trilha_id);
+
+      const aceita = resposta.resposta === 'aceita';
+      const { error: erroDecisao } = await supabase.rpc('decidir_recomendacao', {
+        p_recomendacao: resposta.recomendacaoId,
+        p_resposta: resposta.resposta,
+        p_motivo: aceita ? null : resposta.motivo,
+        p_decidida_em: relogio().toISOString(),
+        // O projeto aceito vira Objetivo com o título do projeto.
+        p_novo_objetivo: aceita && rec.tipo === 'projeto' ? rec.titulo : null,
+        p_para_biblioteca: aceita && (rec.tipo === 'deck' || rec.tipo === 'material'),
+      });
+      // Já respondida, talvez noutro aparelho: a primeira resposta é a que vale.
+      if (erroDecisao?.code === VIOLACAO_UNICA)
+        throw new EntradaInvalida('Esta Recomendação já foi respondida.');
+      if (erroDecisao) throw erroDecisao;
+      const { data, error: erroLeitura } = await supabase
+        .from('decisoes')
+        .select(COLUNAS_DECISAO)
+        .eq('recomendacao_id', resposta.recomendacaoId)
+        .single<LinhaDecisao>();
+      if (erroLeitura) throw erroLeitura;
+      return paraDecisao(data);
+    },
+
+    // Marcar como feito é do usuário; desmarcar corrige um toque errado.
+    // Marcar de novo não muda a data (o mesmo toque pode vir de dois aparelhos).
+    async marcarItemFeito(
+      ator: Ator,
+      { itemId, feito }: { itemId: string; feito: boolean },
+    ): Promise<ItemDaBiblioteca> {
+      if (ator !== 'usuario') throw new PermissaoNegada(ator, 'marcar item da Biblioteca');
+      const buscar = async () => {
+        const { data, error } = await supabase
+          .from('itens_biblioteca')
+          .select(COLUNAS_ITEM)
+          .eq('id', itemId)
+          .maybeSingle<LinhaItem>();
+        if (error) throw error;
+        if (!data) throw new EntradaInvalida('Item da Biblioteca não encontrado.');
+        return data;
+      };
+      const antes = await buscar();
+      if (!!antes.feito_em === feito) return paraItem(antes);
+      await garantirTrilhaAtiva(antes.trilha_id);
+      const atualizacao = supabase
+        .from('itens_biblioteca')
+        .update({ feito_em: feito ? relogio().toISOString() : null })
+        .eq('id', itemId);
+      const { error } = await (feito
+        ? atualizacao.is('feito_em', null)
+        : atualizacao.not('feito_em', 'is', null));
+      if (error) throw error;
+      return paraItem(await buscar());
+    },
+
+    // Todo Ator lê tudo. Na ordem em que entraram.
+    async listarBiblioteca(
+      _ator: Ator,
+      { trilhaId }: { trilhaId: string },
+    ): Promise<ItemDaBiblioteca[]> {
+      const { data, error } = await supabase
+        .from('itens_biblioteca')
+        .select(COLUNAS_ITEM)
+        .eq('trilha_id', trilhaId)
+        .order('adicionado_em')
+        .overrideTypes<LinhaItem[], { merge: false }>();
+      if (error) throw error;
+      return data.map(paraItem);
     },
 
     // Todo Ator lê tudo. Na ordem em que foram criados.

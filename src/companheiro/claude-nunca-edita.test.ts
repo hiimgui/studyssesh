@@ -19,6 +19,7 @@ const LEITURAS: Operacao[] = [
   'progressoDaTrilha',
   'inicio',
   'listarResumos',
+  'listarBiblioteca',
 ];
 // O Claude cria: Resumos (com Recomendações), toda semana; e, a pedido do
 // usuário pelo chat, Sessões com nota e Objetivo numa Trilha sem Objetivo em
@@ -41,10 +42,14 @@ const SO_DO_USUARIO: Operacao[] = [
   'encerrarTimer',
   'concluirObjetivo',
   'celebrarMarco',
+  // Responder Recomendação é gesto do usuário no app; pelo chat chega na #13.
+  'decidirRecomendacao',
+  'marcarItemFeito',
 ];
 
 // Uma conta com de tudo: Trilha ativa e arquivada, Sessões, Objetivos dos dois
-// tipos, um Resumo, um Marco batido e o timer ligado (pausado por Inatividade).
+// tipos, um Resumo com uma Recomendação aceita (na Biblioteca) e outra em
+// aberto, um Marco batido e o timer ligado (pausado por Inatividade).
 async function contaCheia() {
   const relogio = relogioFixo('2026-10-09T12:00:00Z');
   const companheiro = criarCompanheiro({ supabase: await novoUsuario(), relogio });
@@ -73,9 +78,18 @@ async function contaCheia() {
           descricao: 'Para medir o ritmo.',
           url: 'https://www.jlpt.jp/e/samples',
         },
+        {
+          objetivoId: abstrato.id,
+          tipo: 'deck',
+          titulo: 'Kana em 2 semanas',
+          descricao: 'Revisão diária.',
+        },
       ],
     });
-  await resumoDa('2026-09-28', 'Semana de kana.');
+  const primeiro = await resumoDa('2026-09-28', 'Semana de kana.');
+  const [simulado, deckEmAberto] = primeiro.recomendacoes;
+  await companheiro.decidirRecomendacao('usuario', { recomendacaoId: simulado.id, resposta: 'aceita' });
+  const [itemDaBiblioteca] = await companheiro.listarBiblioteca('usuario', { trilhaId: japones.id });
   await companheiro.registrarSessao('usuario', {
     trilhaId: japones.id,
     minutos: 11 * 60,
@@ -105,6 +119,7 @@ async function contaCheia() {
     progresso: await companheiro.progressoDaTrilha('claude', { trilhaId: japones.id }),
     inicio: await companheiro.inicio('claude'),
     resumos: await companheiro.listarResumos('claude', { trilhaId: japones.id }),
+    biblioteca: await companheiro.listarBiblioteca('claude', { trilhaId: japones.id }),
   });
 
   // Uma chamada plausível de cada operação, com dados de verdade da conta.
@@ -117,6 +132,7 @@ async function contaCheia() {
     progressoDaTrilha: () => companheiro.progressoDaTrilha('claude', { trilhaId: japones.id }),
     inicio: () => companheiro.inicio('claude'),
     listarResumos: () => companheiro.listarResumos('claude', { trilhaId: japones.id }),
+    listarBiblioteca: () => companheiro.listarBiblioteca('claude', { trilhaId: japones.id }),
     criarResumo: () => resumoDa('2026-10-05', 'Semana de kanji.'),
     registrarSessao: () =>
       companheiro.registrarSessao('claude', { trilhaId: japones.id, minutos: 5, nota: 'x' }),
@@ -139,6 +155,10 @@ async function contaCheia() {
     encerrarTimer: () => companheiro.encerrarTimer('claude', { nota: 'x' }),
     concluirObjetivo: () => companheiro.concluirObjetivo('claude', { objetivoId: abstrato.id }),
     celebrarMarco: () => companheiro.celebrarMarco('claude', { trilhaId: japones.id, marco: 10 }),
+    decidirRecomendacao: () =>
+      companheiro.decidirRecomendacao('claude', { recomendacaoId: deckEmAberto.id, resposta: 'aceita' }),
+    marcarItemFeito: () =>
+      companheiro.marcarItemFeito('claude', { itemId: itemDaBiblioteca.id, feito: true }),
   };
 
   return { companheiro, relogio, japones, violao, retrato, chamar, resumoDa };
