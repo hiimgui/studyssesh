@@ -20,15 +20,17 @@ const LEITURAS: Operacao[] = [
   'inicio',
   'listarResumos',
   'listarBiblioteca',
+  'listarDecisoes',
 ];
 // O Claude cria: Resumos (com Recomendações), toda semana; e, a pedido do
-// usuário pelo chat, Sessões com nota e Objetivo numa Trilha sem Objetivo em
-// andamento.
+// usuário pelo chat, Sessões com nota, Objetivo numa Trilha sem Objetivo em
+// andamento e Decisões (aceitar ou recusar Recomendação).
 const CRIACOES_DO_CLAUDE: Operacao[] = [
   'criarResumo',
   'registrarSessao',
   'criarObjetivoMensuravel',
   'criarObjetivoAbstrato',
+  'decidirRecomendacao',
 ];
 // Todo o resto muda o que já existe (ou é gesto do usuário no app).
 const SO_DO_USUARIO: Operacao[] = [
@@ -42,8 +44,6 @@ const SO_DO_USUARIO: Operacao[] = [
   'encerrarTimer',
   'concluirObjetivo',
   'celebrarMarco',
-  // Responder Recomendação é gesto do usuário no app; pelo chat chega na #13.
-  'decidirRecomendacao',
   'marcarItemFeito',
 ];
 
@@ -120,6 +120,7 @@ async function contaCheia() {
     inicio: await companheiro.inicio('claude'),
     resumos: await companheiro.listarResumos('claude', { trilhaId: japones.id }),
     biblioteca: await companheiro.listarBiblioteca('claude', { trilhaId: japones.id }),
+    decisoes: await companheiro.listarDecisoes('claude', { trilhaId: japones.id }),
   });
 
   // Uma chamada plausível de cada operação, com dados de verdade da conta.
@@ -133,6 +134,7 @@ async function contaCheia() {
     inicio: () => companheiro.inicio('claude'),
     listarResumos: () => companheiro.listarResumos('claude', { trilhaId: japones.id }),
     listarBiblioteca: () => companheiro.listarBiblioteca('claude', { trilhaId: japones.id }),
+    listarDecisoes: () => companheiro.listarDecisoes('claude', { trilhaId: japones.id }),
     criarResumo: () => resumoDa('2026-10-05', 'Semana de kanji.'),
     registrarSessao: () =>
       companheiro.registrarSessao('claude', { trilhaId: japones.id, minutos: 5, nota: 'x' }),
@@ -161,7 +163,7 @@ async function contaCheia() {
       companheiro.marcarItemFeito('claude', { itemId: itemDaBiblioteca.id, feito: true }),
   };
 
-  return { companheiro, relogio, japones, violao, retrato, chamar, resumoDa };
+  return { companheiro, relogio, japones, violao, retrato, chamar, resumoDa, deckEmAberto };
 }
 
 describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
@@ -194,7 +196,7 @@ describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
   });
 
   it('o que o Claude cria só acrescenta: o que já existia continua igual', async () => {
-    const { companheiro, japones, retrato, resumoDa } = await contaCheia();
+    const { companheiro, japones, retrato, resumoDa, deckEmAberto } = await contaCheia();
     const antes = await retrato();
 
     // Na Trilha com Objetivo em andamento, o Claude não define outro.
@@ -209,10 +211,28 @@ describe('O Claude nunca edita nem apaga (ADR 0002)', () => {
     });
 
     const resumo = await resumoDa('2026-10-05', 'Semana de kanji.');
+    // A pedido do usuário pelo chat, o Claude aceita o Deck em aberto.
+    const decisao = await companheiro.decidirRecomendacao('claude', {
+      recomendacaoId: deckEmAberto.id,
+      resposta: 'aceita',
+    });
 
     const depois = await retrato();
     expect(depois.sessoes).toEqual([nova, ...antes.sessoes]);
-    expect(depois.resumos).toEqual([resumo, ...antes.resumos]);
+    // O Resumo novo entra; os de antes continuam iguais, só o Deck ganha a Decisão.
+    const semDecisao = (r: (typeof antes.resumos)[number]) => ({
+      ...r,
+      recomendacoes: r.recomendacoes.map((rec) => ({ ...rec, decisao: null })),
+    });
+    expect(depois.resumos.map(semDecisao)).toEqual([resumo, ...antes.resumos].map(semDecisao));
+    expect(depois.resumos.at(-1)?.recomendacoes.map((r) => r.decisao)).toEqual([
+      antes.resumos.at(-1)?.recomendacoes[0].decisao,
+      decisao,
+    ]);
+    expect(depois.decisoes.slice(1)).toEqual(antes.decisoes);
+    // O Deck aceito entra na Biblioteca; o item que já estava fica como estava.
+    expect(depois.biblioteca.slice(0, -1)).toEqual(antes.biblioteca);
+    expect(depois.biblioteca).toHaveLength(antes.biblioteca.length + 1);
     expect(depois.trilhas).toEqual(antes.trilhas);
     expect(depois.arquivadas).toEqual(antes.arquivadas);
     expect(depois.timer).toEqual(antes.timer);
