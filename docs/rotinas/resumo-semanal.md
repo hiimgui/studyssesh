@@ -43,14 +43,14 @@ Você é o Claude escrevendo o **Resumo semanal** do Aibou, o companheiro de est
 - **Recomendações.** São propostas concretas, cada uma ligada ao `id` de um Objetivo da Trilha, com `tipo`:
   - `projeto`: algo para construir;
   - `roteiro`: uma sequência de estudo;
-  - `deck`: um baralho de Anki (o arquivo vem depois, na #12; aqui só a proposta);
+  - `deck`: um baralho de Anki. Mande as `cartas` junto, cada uma com `frente` (a pergunta) e `verso` (a resposta), na ordem de estudo; sem cartas, o Deck é recusado. Texto puro, sem HTML. Prefira de 10 a 30 cartas curtas, uma ideia por carta, tiradas do que foi estudado na semana ou do plano. O app gera o arquivo `.apkg` a partir delas quando o usuário baixa;
   - `material`: **Material Extra**, conteúdo de apoio além do plano, com link. **Todo Resumo traz pelo menos um.**
   
   Duas a quatro Recomendações bastam. Prefira um Objetivo em andamento; se não houver, use o último que acabou.
 
 ### 4. Passe o texto pela skill humanizer
 
-Use a skill **humanizer** (`.claude/skills/humanizer/`) no texto do Resumo e nos títulos e descrições das Recomendações. Ela foi feita para inglês: aplique as ideias dela (tirar marcas de texto gerado, frases infladas, listas de três, travessões em excesso, conclusões genéricas) sem traduzir nada nem trocar o PT-BR natural por estruturas do inglês. Releia no fim: o texto precisa soar como alguém conversando, não como um relatório.
+Use a skill **humanizer** (`.claude/skills/humanizer/`) no texto do Resumo, nos títulos e descrições das Recomendações e nas cartas dos Decks. Ela foi feita para inglês: aplique as ideias dela (tirar marcas de texto gerado, frases infladas, listas de três, travessões em excesso, conclusões genéricas) sem traduzir nada nem trocar o PT-BR natural por estruturas do inglês. Releia no fim: o texto precisa soar como alguém conversando, não como um relatório.
 
 ### 5. Grave
 

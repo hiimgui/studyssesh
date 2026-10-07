@@ -32,7 +32,13 @@ async function resumoComRecomendacoes(companheiro: Companheiro, trilhaId: string
     fontes: [{ titulo: 'Guia', url: 'https://example.com/guia' }],
     recomendacoes: [
       { objetivoId: objetivo.id, tipo: 'material', titulo: 'Especificação do MCP', descricao: 'A spec.' },
-      { objetivoId: objetivo.id, tipo: 'deck', titulo: 'Deck de MCP', descricao: 'Termos.' },
+      {
+        objetivoId: objetivo.id,
+        tipo: 'deck',
+        titulo: 'Deck de MCP',
+        descricao: 'Termos.',
+        cartas: [{ frente: 'O que é MCP?', verso: 'Um protocolo.' }],
+      },
     ],
   });
   const [material, deck] = resumo.recomendacoes;
@@ -109,6 +115,46 @@ describe('Servidor MCP', () => {
         texto: 'Semana curta, mas com foco.',
         recomendacoes: [{ objetivoId: objetivo.id, tipo: 'material' }],
       },
+    ]);
+  });
+
+  it('gravar_resumo grava as cartas de um Deck', async () => {
+    const { cliente, companheiro, trilha } = await conectado();
+    const objetivo = await companheiro.criarObjetivoAbstrato('usuario', {
+      trilhaId: trilha.id,
+      descricao: 'Conseguir a certificação',
+    });
+
+    const resposta = await cliente.callTool({
+      name: 'gravar_resumo',
+      arguments: {
+        trilha_id: trilha.id,
+        semana_de: '2026-09-28',
+        texto: 'Semana de OAuth.',
+        fontes: [{ titulo: 'Especificação do MCP', url: 'https://modelcontextprotocol.io' }],
+        recomendacoes: [
+          {
+            objetivo_id: objetivo.id,
+            tipo: 'deck',
+            titulo: 'OAuth no MCP',
+            descricao: 'Dez minutos por dia.',
+            cartas: [{ frente: 'Quem emite o token?', verso: 'O servidor de autorização.' }],
+          },
+          {
+            objetivo_id: objetivo.id,
+            tipo: 'material',
+            titulo: 'Autorização no MCP',
+            descricao: 'O capítulo de OAuth.',
+            url: 'https://modelcontextprotocol.io/specification',
+          },
+        ],
+      },
+    });
+
+    expect(resposta.isError).toBeFalsy();
+    const [resumo] = await companheiro.listarResumos('usuario', { trilhaId: trilha.id });
+    expect(resumo.recomendacoes[0].cartas).toEqual([
+      { frente: 'Quem emite o token?', verso: 'O servidor de autorização.' },
     ]);
   });
 

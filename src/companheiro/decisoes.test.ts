@@ -27,6 +27,7 @@ async function resumoComRecomendacoes() {
     titulo,
     descricao: `Sobre ${titulo}.`,
     url,
+    cartas: tipo === 'deck' ? [{ frente: 'O que é MCP?', verso: 'Um protocolo.' }] : undefined,
   });
   const resumo = await companheiro.criarResumo('claude', {
     trilhaId: trilha.id,
@@ -72,6 +73,7 @@ describe('Aceitar ou recusar uma Recomendação', () => {
         titulo: 'Especificação do MCP',
         descricao: 'Sobre Especificação do MCP.',
         url: 'https://modelcontextprotocol.io/specification',
+        cartas: 0,
         adicionadoEm: new Date('2026-10-12T11:07:00Z'),
         feitoEm: null,
       },
