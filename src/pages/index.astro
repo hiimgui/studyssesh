@@ -625,6 +625,17 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
 </Base>
 
 <script>
+  // Com abas demais para a largura, a aba atual rola para a vista (só a
+  // faixa das abas: a página fica onde está, inclusive num #âncora).
+  const abas = document.querySelector('nav');
+  const atual = abas?.querySelector('[aria-current="page"]');
+  if (abas && atual) {
+    const sobra = atual.getBoundingClientRect().right - abas.getBoundingClientRect().right;
+    if (sobra > 0) abas.scrollLeft += sobra + 40;
+  }
+</script>
+
+<script>
   // Rascunho da nota da Sessão: guardado a cada tecla e devolvido ao campo
   // depois de qualquer recarga. Rascunhos de timers que já acabaram são
   // apagados. Sem localStorage (aba anônima, bloqueio), o campo só não lembra.
@@ -713,6 +724,13 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
     border-bottom: 1px solid var(--linha);
     overflow-x: auto;
     scrollbar-width: none;
+  }
+
+  /* No celular as abas rolam: a borda direita esmaece para mostrar que há mais. */
+  @media (max-width: 40rem) {
+    nav {
+      mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+    }
   }
 
   nav ul {
@@ -1134,6 +1152,10 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
     border: 1px solid var(--linha);
     border-radius: var(--raio);
     font-variant-numeric: tabular-nums;
+  }
+
+  .sessoes h2 {
+    font-size: var(--titulo-secao);
   }
 
   .sessoes ol {
