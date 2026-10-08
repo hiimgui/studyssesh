@@ -3,6 +3,7 @@ import type {
   Motivo,
   Objetivo,
   ObjetivoMensuravel,
+  SituacaoDaRecomendacao,
   TipoRecomendacao,
 } from '../companheiro/companheiro';
 
@@ -62,3 +63,27 @@ export const semanaPorExtenso = ({ de, ate }: { de: Data; ate: Data }) =>
   de.slice(0, 7) === ate.slice(0, 7)
     ? `Semana de ${Number(de.slice(8))} a ${diaMes(ate)}`
     : `Semana de ${diaMes(de)} a ${diaMes(ate)}`;
+
+// Quando um Resumo saiu: "segunda-feira, 12 de outubro, 07:07".
+export const quandoSaiu = (d: Date) =>
+  d.toLocaleString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: FUSO,
+  });
+
+// Para o filtro e a contagem: "em aberto", "aceitas", "recusadas".
+export const ROTULO_DA_SITUACAO: Record<SituacaoDaRecomendacao, string> = {
+  aberta: 'em aberto',
+  aceita: 'aceitas',
+  recusada: 'recusadas',
+};
+
+// "2 em aberto", "1 aceita", "3 recusadas".
+export const quantasNaSituacao = (n: number, situacao: SituacaoDaRecomendacao) =>
+  situacao === 'aberta'
+    ? `${n} em aberto`
+    : `${n} ${situacao}${n === 1 ? '' : 's'}`;

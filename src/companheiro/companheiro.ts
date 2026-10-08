@@ -182,6 +182,21 @@ export interface Resumo {
   recomendacoes: Recomendacao[];
 }
 
+// Em que pé está uma Recomendação: ninguém respondeu, ou a Decisão tomada.
+export type SituacaoDaRecomendacao = 'aberta' | 'aceita' | 'recusada';
+
+export const SITUACOES: SituacaoDaRecomendacao[] = ['aberta', 'aceita', 'recusada'];
+
+export const situacaoDe = (r: Recomendacao): SituacaoDaRecomendacao => r.decisao?.resposta ?? 'aberta';
+
+// Um Resumo no histórico, com quantas Recomendações há em cada situação.
+export type ResumoNoHistorico = Resumo & { contagem: Record<SituacaoDaRecomendacao, number> };
+
+export interface HistoricoDeResumos {
+  trilha: Trilha;
+  resumos: ResumoNoHistorico[];
+}
+
 export interface NovaRecomendacao {
   objetivoId: string;
   tipo: TipoRecomendacao;
@@ -1132,6 +1147,38 @@ export function criarCompanheiro({ supabase, relogio = () => new Date() }: Depen
       { trilhaId, limite }: { trilhaId: string; limite?: number },
     ): Promise<Resumo[]> {
       return resumosDaTrilha(trilhaId, limite);
+    },
+
+    // Todo Ator lê tudo. O histórico de Resumos de uma Trilha, ativa ou
+    // arquivada, mais recentes primeiro. Com filtro, só os Resumos com alguma
+    // Recomendação para o Objetivo e na situação pedidos (a mesma Recomendação
+    // atende aos dois filtros juntos).
+    async historicoDeResumos(
+      _ator: Ator,
+      {
+        trilhaId,
+        objetivoId,
+        situacao,
+      }: { trilhaId: string; objetivoId?: string; situacao?: SituacaoDaRecomendacao },
+    ): Promise<HistoricoDeResumos | null> {
+      const { data, error } = await supabase
+        .from('trilhas')
+        .select(COLUNAS_TRILHA)
+        .eq('id', trilhaId)
+        .maybeSingle<LinhaTrilha>();
+      if (error) throw error;
+      if (!data) return null;
+      const bate = (rec: Recomendacao) =>
+        (!objetivoId || rec.objetivoId === objetivoId) && (!situacao || situacaoDe(rec) === situacao);
+      const resumos = (await resumosDaTrilha(trilhaId)).filter((r) => r.recomendacoes.some(bate));
+      return {
+        trilha: paraTrilha(data),
+        resumos: resumos.map((r) => {
+          const contagem = { aberta: 0, aceita: 0, recusada: 0 };
+          for (const rec of r.recomendacoes) contagem[situacaoDe(rec)]++;
+          return { ...r, contagem };
+        }),
+      };
     },
 
     // Aceitar ou recusar é escolha do usuário, no app ou pelo chat (aí o Claude

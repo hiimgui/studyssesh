@@ -1,77 +1,37 @@
 ---
-import {
-  MOTIVOS,
-  type Objetivo,
-  type Recomendacao,
-  type Resumo,
-  type Trilha,
-} from '../companheiro/companheiro';
-import { dataDe, FUSO } from '../companheiro/fuso';
-import {
-  nomeDoObjetivo as nomeDe,
-  ROTULO_DO_MOTIVO,
-  ROTULO_DO_TIPO,
-  semanaPorExtenso,
-} from '../lib/formato';
+import { type Objetivo, type Resumo, type Trilha } from '../companheiro/companheiro';
+import { dataDe } from '../companheiro/fuso';
+import { quandoSaiu, semanaPorExtenso } from '../lib/formato';
 import { linkGerarAgora, resumoAtrasado } from '../lib/resumo';
+import ResumoCompleto from './ResumoCompleto.astro';
 
-// Linha do tempo de Resumos da Trilha: o mais recente aberto, os anteriores
-// recolhidos. Cada Recomendação em aberto se aceita ou recusa (com Motivo)
-// aqui. Na consulta de uma Trilha arquivada, só leitura e sem "gerar agora".
+// O Resumo mais recente da Trilha, aberto; os anteriores ficam no histórico
+// (/resumos). Na consulta de uma Trilha arquivada, só leitura e sem "gerar agora".
 interface Props {
   trilha: Trilha;
-  resumos: Resumo[];
+  ultimo: Resumo | null;
   objetivos: Objetivo[];
   consultando: boolean;
 }
 
-const { trilha, resumos, objetivos, consultando } = Astro.props;
+const { trilha, ultimo, objetivos, consultando } = Astro.props;
 const agora = new Date();
-const [ultimo] = resumos;
 // Sem nenhum Objetivo não há Resumo: toda Recomendação precisa de um, e a
 // routine pula a Trilha. Então também não há atraso.
 const semObjetivo = objetivos.length === 0;
-const atrasado =
-  !consultando && !semObjetivo && resumoAtrasado(ultimo ?? null, trilha.criadaEm, agora);
-
-const nomeDoObjetivo = (id: string) => {
-  const o = objetivos.find((x) => x.id === id);
-  return o ? nomeDe(o) : 'Objetivo';
-};
-// O botão de aceitar diz o que acontece com a Recomendação.
-const ACEITAR: Record<Recomendacao['tipo'], string> = {
-  projeto: 'Virar Objetivo',
-  roteiro: 'Aceitar',
-  deck: 'Pôr na Biblioteca',
-  material: 'Pôr na Biblioteca',
-};
-const respondida = (rec: Recomendacao) => {
-  const d = rec.decisao!;
-  if (d.resposta === 'recusada') return `Recusada: ${ROTULO_DO_MOTIVO[d.motivo]}.`;
-  if (rec.tipo === 'projeto') return 'Aceita. Virou Objetivo desta Trilha.';
-  if (rec.tipo === 'roteiro') return 'Aceita.';
-  return 'Aceita. Está na Biblioteca.';
-};
-const voltarPara = (rec: Recomendacao) => `/?trilha=${trilha.id}#rec-${rec.id}`;
-const quando = (d: Date) =>
-  d.toLocaleString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: FUSO,
-  });
-const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+const atrasado = !consultando && !semObjetivo && resumoAtrasado(ultimo, trilha.criadaEm, agora);
 ---
 
 <section class="resumos" aria-labelledby="titulo-resumos">
   <div class="cabeca">
-    <h2 id="titulo-resumos">Resumos</h2>
+    <div class="titulo-linha">
+      <h2 id="titulo-resumos">Resumos</h2>
+      {ultimo && <a class="historico" href={`/resumos?trilha=${trilha.id}`}>Ver histórico</a>}
+    </div>
     <p class="suave">
       {
         ultimo
-          ? `O último saiu ${quando(ultimo.geradoEm)}.`
+          ? `O último saiu ${quandoSaiu(ultimo.geradoEm)}.`
           : consultando
             ? 'Esta Trilha não teve Resumos.'
             : semObjetivo
@@ -101,97 +61,18 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
   </div>
 
   {
-    resumos.length > 0 && (
-      <ol class="linha-do-tempo">
-        {resumos.map((r, i) => (
-          <li>
-            <details class="resumo" open={i === 0}>
-              <summary>
-                <span class="semana">{semanaPorExtenso(r.semana)}</span>
-                <span class="suave quando">{quando(r.geradoEm)}</span>
-              </summary>
-              <div class="corpo">
-                <div class="texto">
-                  {paragrafos(r.texto).map((p) => (
-                    <p>{p}</p>
-                  ))}
-                </div>
-
-                <h3>Recomendações</h3>
-                <ul class="recomendacoes">
-                  {r.recomendacoes.map((rec) => (
-                    <li
-                      id={`rec-${rec.id}`}
-                      data-tipo={rec.tipo}
-                      data-resposta={rec.decisao?.resposta}
-                    >
-                      <span class="tipo">{ROTULO_DO_TIPO[rec.tipo]}</span>
-                      <span class="titulo">
-                        {rec.url ? (
-                          <a href={rec.url} target="_blank" rel="noopener noreferrer">
-                            {rec.titulo}
-                          </a>
-                        ) : (
-                          rec.titulo
-                        )}
-                      </span>
-                      {rec.descricao && <span class="descricao">{rec.descricao}</span>}
-                      <span class="suave objetivo">
-                        {rec.cartas &&
-                          `${rec.cartas.length} ${rec.cartas.length === 1 ? 'carta' : 'cartas'} · `}
-                        Para: {nomeDoObjetivo(rec.objetivoId)}
-                      </span>
-                      {rec.decisao ? (
-                        <p class="resposta">{respondida(rec)}</p>
-                      ) : (
-                        !consultando && (
-                          <div class="responder">
-                            <form method="post" action="/recomendacao">
-                              <input type="hidden" name="recomendacao" value={rec.id} />
-                              <input type="hidden" name="voltar" value={voltarPara(rec)} />
-                              <button class="botao-secundario" type="submit" name="resposta" value="aceita">
-                                {ACEITAR[rec.tipo]}
-                              </button>
-                            </form>
-                            <details class="recusar">
-                              <summary>Recusar</summary>
-                              <form method="post" action="/recomendacao" class="motivos">
-                                <input type="hidden" name="recomendacao" value={rec.id} />
-                                <input type="hidden" name="resposta" value="recusada" />
-                                <input type="hidden" name="voltar" value={voltarPara(rec)} />
-                                <p class="suave" id={`motivo-${rec.id}`}>Por quê?</p>
-                                <div class="opcoes-motivo" role="group" aria-labelledby={`motivo-${rec.id}`}>
-                                  {MOTIVOS.map((m) => (
-                                    <button class="motivo" type="submit" name="motivo" value={m}>
-                                      {ROTULO_DO_MOTIVO[m]}
-                                    </button>
-                                  ))}
-                                </div>
-                              </form>
-                            </details>
-                          </div>
-                        )
-                      )}
-                    </li>
-                  ))}
-                </ul>
-
-                <p class="fontes suave">
-                  Fontes:{' '}
-                  {r.fontes.map((f, j) => (
-                    <>
-                      {j > 0 && ' · '}
-                      <a href={f.url} target="_blank" rel="noopener noreferrer">
-                        {f.titulo}
-                      </a>
-                    </>
-                  ))}
-                </p>
-              </div>
-            </details>
-          </li>
-        ))}
-      </ol>
+    ultimo && (
+      <article class="resumo" aria-labelledby="semana-do-ultimo">
+        <h3 class="semana" id="semana-do-ultimo">
+          {semanaPorExtenso(ultimo.semana)}
+        </h3>
+        <ResumoCompleto
+          resumo={ultimo}
+          objetivos={objetivos}
+          consultando={consultando}
+          voltar={`/?trilha=${trilha.id}`}
+        />
+      </article>
     )
   }
 </section>
@@ -209,6 +90,27 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
     justify-items: start;
   }
 
+  .titulo-linha {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+    justify-self: stretch;
+  }
+
+  .historico {
+    font-size: 0.8125rem;
+    color: var(--texto-suave);
+    text-decoration-color: var(--linha);
+    text-underline-offset: 3px;
+  }
+
+  .historico:hover {
+    color: var(--texto);
+    text-decoration-color: currentColor;
+  }
+
   .atraso {
     color: var(--texto);
   }
@@ -221,225 +123,15 @@ const paragrafos = (texto: string) => texto.split(/\n\s*\n/).map((p) => p.trim()
     text-decoration: none;
   }
 
-  .linha-do-tempo {
-    display: grid;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .linha-do-tempo > li {
+  .resumo {
     border-top: 1px solid var(--linha);
-  }
-
-  .linha-do-tempo > li:last-child {
     border-bottom: 1px solid var(--linha);
   }
 
-  summary {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 0.25rem 1rem;
-    padding-block: 0.875rem;
-    cursor: pointer;
-    list-style: none;
-  }
-
-  summary::-webkit-details-marker {
-    display: none;
-  }
-
   .semana {
-    font-weight: 500;
-  }
-
-  .resumo:not([open]) .semana {
-    text-decoration: underline;
-    text-decoration-color: var(--linha);
-    text-underline-offset: 4px;
-  }
-
-  .quando {
-    font-size: 0.8125rem;
-  }
-
-  .corpo {
-    display: grid;
-    gap: 1rem;
-    padding-bottom: 1.5rem;
-  }
-
-  .texto {
-    display: grid;
-    gap: 0.75rem;
-    max-width: 65ch;
-    text-wrap: pretty;
-  }
-
-  h3 {
-    margin: 0.5rem 0 0;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--texto-suave);
-  }
-
-  .recomendacoes {
-    display: grid;
-    gap: 0.875rem;
     margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .recomendacoes li {
-    display: grid;
-    gap: 0.125rem;
-  }
-
-  .tipo {
-    font-size: 0.75rem;
-    letter-spacing: 0.02em;
-    color: var(--texto-suave);
-  }
-
-  [data-tipo='material'] .tipo {
-    color: var(--destaque);
-  }
-
-  .titulo {
+    padding-block: 0.875rem;
+    font-size: inherit;
     font-weight: 500;
-  }
-
-  .titulo a,
-  .fontes a {
-    text-underline-offset: 3px;
-    text-decoration-color: var(--linha);
-  }
-
-  .titulo a:hover,
-  .fontes a:hover {
-    text-decoration-color: currentColor;
-  }
-
-  .descricao {
-    text-wrap: pretty;
-  }
-
-  .objetivo,
-  .fontes {
-    font-size: 0.8125rem;
-  }
-
-  .fontes {
-    overflow-wrap: anywhere;
-  }
-
-  /* Respondida, a Recomendação recua; a recusada recua mais. */
-  [data-resposta] .titulo,
-  [data-resposta] .descricao {
-    color: var(--texto-suave);
-  }
-
-  [data-resposta='recusada'] .titulo {
-    text-decoration: line-through;
-    text-decoration-color: var(--linha);
-  }
-
-  .resposta {
-    font-size: 0.8125rem;
-  }
-
-  [data-resposta='aceita'] .resposta {
-    color: var(--destaque);
-  }
-
-  [data-resposta='recusada'] .resposta {
-    color: var(--texto-suave);
-  }
-
-  .responder {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 0.5rem 1rem;
-    margin-top: 0.5rem;
-  }
-
-  .responder button.botao-secundario {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.8125rem;
-  }
-
-  /* Ocupa o resto da linha, para os Motivos abrirem lado a lado. */
-  .recusar {
-    flex: 1 1 14rem;
-  }
-
-  .recusar > summary {
-    display: inline-block;
-    padding: 0.375rem 0;
-    font-size: 0.8125rem;
-    color: var(--texto-suave);
-    text-decoration: underline;
-    text-decoration-color: var(--linha);
-    text-underline-offset: 3px;
-  }
-
-  .recusar > summary:hover {
-    color: var(--texto);
-    text-decoration-color: currentColor;
-  }
-
-  .recusar[open] > summary {
-    color: var(--texto);
-  }
-
-  .motivos {
-    display: grid;
-    gap: 0.375rem;
-    padding-top: 0.25rem;
-  }
-
-  .motivos p {
-    font-size: 0.8125rem;
-  }
-
-  .opcoes-motivo {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  .motivo {
-    padding: 0.3125rem 0.625rem;
-    font-size: 0.8125rem;
-    background: none;
-    color: var(--texto);
-    box-shadow: inset 0 0 0 1px var(--linha);
-    transition: box-shadow 120ms ease-out;
-  }
-
-  .motivo:hover {
-    opacity: 1;
-    box-shadow: inset 0 0 0 1px var(--texto-suave);
-  }
-
-  /* Ao voltar do envio, a Recomendação respondida aparece em destaque breve. */
-  .recomendacoes li:target {
-    animation: respondida 1.6s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  @keyframes respondida {
-    from {
-      background: color-mix(in oklch, var(--destaque) 12%, transparent);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .recomendacoes li:target {
-      animation: none;
-    }
   }
 </style>
