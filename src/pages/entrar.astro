@@ -45,6 +45,15 @@ if (Astro.request.method === 'POST') {
   </main>
 </Base>
 
+<script>
+  // Enviando: o botão trava até a página responder, para não sair um segundo link.
+  const form = document.querySelector<HTMLFormElement>('main form');
+  form?.addEventListener('submit', () => {
+    form.setAttribute('aria-busy', 'true');
+    setTimeout(() => form.querySelector('button')?.setAttribute('disabled', ''));
+  });
+</script>
+
 <style>
   main {
     display: grid;

@@ -48,6 +48,7 @@ const dataLonga = (d: Date) => d.toLocaleDateString('pt-BR', { dateStyle: 'long'
 
   header {
     padding-block: 1.25rem;
+    border-bottom: 1px solid var(--linha);
   }
 
   .marca {
@@ -90,11 +91,12 @@ const dataLonga = (d: Date) => d.toLocaleDateString('pt-BR', { dateStyle: 'long'
   }
 
   li a {
-    text-decoration: none;
+    font-weight: 500;
+    text-decoration-color: var(--linha);
+    text-underline-offset: 4px;
   }
 
   li a:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    text-decoration-color: currentColor;
   }
 </style>
