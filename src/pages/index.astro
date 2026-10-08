@@ -110,7 +110,10 @@ const sessoes = atual
     })
   : [];
 const objetivos = atual ? await companheiro.listarObjetivos('usuario', { trilhaId: atual.id }) : [];
-const resumos = atual ? await companheiro.listarResumos('usuario', { trilhaId: atual.id }) : [];
+// Na Trilha, só o último Resumo; os anteriores ficam no histórico.
+const resumos = atual
+  ? await companheiro.listarResumos('usuario', { trilhaId: atual.id, limite: 1 })
+  : [];
 const biblioteca = atual
   ? await companheiro.listarBiblioteca('usuario', { trilhaId: atual.id })
   : [];
@@ -555,7 +558,7 @@ const duracao = ({ duracaoSegundos }: Sessao) => {
 
           <Resumos
             trilha={atual}
-            resumos={resumos}
+            ultimo={resumos[0] ?? null}
             objetivos={objetivos}
             consultando={!!consultando}
           />

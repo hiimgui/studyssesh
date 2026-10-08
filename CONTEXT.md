@@ -29,7 +29,7 @@ Um patamar de horas acumuladas numa Trilha: 10h, 25h, 50h, 100h e, dali em diant
 A tela que consolida todas as Trilhas: o timer rápido, o total de horas, os dias estudados no mês, as barras de progresso e o último Resumo de cada Trilha. Os *dias estudados no mês* são os dias distintos, no fuso America/Sao_Paulo, em que alguma Sessão começou. O contador só cresce dentro do mês; um dia sem estudo não zera nada.
 
 **Resumo**
-Análise semanal gerada pelo Claude, por Trilha, a partir das Sessões, dos Objetivos e das Decisões passadas. É opinativa e se apoia em fontes confiáveis. Tolera atrasos: uma semana fraca leva a um novo plano, nunca a uma bronca. Sempre traz Material Extra, de fontes confiáveis em português ou inglês. Todos os Resumos ficam guardados numa linha do tempo da Trilha.
+Análise semanal gerada pelo Claude, por Trilha, a partir das Sessões, dos Objetivos e das Decisões passadas. É opinativa e se apoia em fontes confiáveis. Tolera atrasos: uma semana fraca leva a um novo plano, nunca a uma bronca. Sempre traz Material Extra, de fontes confiáveis em português ou inglês. Todos os Resumos ficam guardados no histórico de Resumos da Trilha, que filtra por Objetivo e pela situação das Recomendações; a página da Trilha mostra só o último.
 
 **Recomendação**
 Uma proposta concreta do Claude dentro de um Resumo, como um projeto, um roteiro, um deck de Anki ou um material. Sempre ligada a um Objetivo. Pode ser aceita ou recusada com um clique, no app ou pelo chat.
